@@ -9,59 +9,6 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
-// Sample commit history data
-const commits = [
-  {
-    id: "c1",
-    message: "Updated building footprints",
-    author: "Alex Kim",
-    timestamp: "2h ago",
-    date: "Apr 30, 2023",
-    isLlm: false,
-  },
-  {
-    id: "c2",
-    message: "LLM processed height data",
-    author: "GeoLLM",
-    timestamp: "Yesterday",
-    date: "Apr 29, 2023",
-    isLlm: true,
-  },
-  {
-    id: "c3",
-    message: "Added new road network layer",
-    author: "Jamie Smith",
-    timestamp: "2d ago",
-    date: "Apr 28, 2023",
-    isLlm: false,
-  },
-  {
-    id: "c4",
-    message: "Merged branch 'feature/parks'",
-    author: "Alex Kim",
-    timestamp: "3d ago",
-    date: "Apr 27, 2023",
-    isLlm: false,
-    isMerge: true,
-  },
-  {
-    id: "c5",
-    message: "LLM classified land use zones",
-    author: "GeoLLM",
-    timestamp: "4d ago",
-    date: "Apr 26, 2023",
-    isLlm: true,
-  },
-  {
-    id: "c6",
-    message: "Initial dataset upload",
-    author: "Alex Kim",
-    timestamp: "1w ago",
-    date: "Apr 23, 2023",
-    isLlm: false,
-  },
-]
-
 // Sample branches data
 const branches = [
   { name: "main", isActive: true },
@@ -71,14 +18,26 @@ const branches = [
 
 interface VersionControlProps {
   onCompareVersions?: (version1: string, version2: string) => void
+  commits?: Array<{
+    id: string
+    message: string
+    author: string
+    timestamp: string
+    date: string
+    isLlm?: boolean
+    isMerge?: boolean
+  }>
 }
 
-export function VersionControl({ onCompareVersions }: VersionControlProps) {
+export function VersionControl({ onCompareVersions, commits = [] }: VersionControlProps) {
   const [activeTab, setActiveTab] = useState<"commits" | "branches">("commits")
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
   const [selectedCommits, setSelectedCommits] = useState<string[]>([])
   const [compareMode, setCompareMode] = useState(false)
-  const [currentHead, setCurrentHead] = useState("c1") // Default head is the most recent commit
+  const [currentHead, setCurrentHead] = useState(commits.length > 0 ? commits[0].id : "")
+
+  // Use provided commits or fallback to empty array
+  const commitHistory = commits.length > 0 ? commits : []
 
   const toggleCommitSelection = (commitId: string) => {
     if (compareMode) {
@@ -122,13 +81,13 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
-        <div className="flex border-b border-border">
+        <div className="flex border-b border-border mt-2">
           <Button
             variant="ghost"
             size="sm"
-            className={`flex-1 rounded-none border-b-2 px-0 py-2 text-xs font-medium ${
+            className={`w-1/2 rounded-none border-b-2 border-transparent px-0 py-2 text-xs font-medium ${
               activeTab === "commits"
-                ? "border-green-500 text-green-400"
+                ? "border-blue-500 text-blue-400"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => setActiveTab("commits")}
@@ -139,7 +98,7 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
           <Button
             variant="ghost"
             size="sm"
-            className={`flex-1 rounded-none border-b-2 px-0 py-2 text-xs font-medium ${
+            className={`w-1/2 rounded-none border-b-2 border-transparent px-0 py-2 text-xs font-medium ${
               activeTab === "branches"
                 ? "border-blue-500 text-blue-400"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -186,11 +145,11 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
               {selectedCommits.length === 2 && (
                 <div className="mt-2 flex items-center gap-1 text-[10px]">
                   <span className="rounded bg-blue-500/20 px-1 py-0.5 text-blue-400">
-                    {commits.find((c) => c.id === selectedCommits[0])?.message.substring(0, 15)}...
+                    {commitHistory.find((c) => c.id === selectedCommits[0])?.message.substring(0, 15)}...
                   </span>
                   <span>vs</span>
                   <span className="rounded bg-blue-500/20 px-1 py-0.5 text-blue-400">
-                    {commits.find((c) => c.id === selectedCommits[1])?.message.substring(0, 15)}...
+                    {commitHistory.find((c) => c.id === selectedCommits[1])?.message.substring(0, 15)}...
                   </span>
                 </div>
               )}
@@ -202,7 +161,7 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
               {/* Timeline line */}
               <div className="absolute left-1.5 top-0 h-full w-0.5 bg-border"></div>
 
-              {commits.map((commit, index) => (
+              {commitHistory.map((commit, index) => (
                 <div
                   key={commit.id}
                   className={`relative ${
@@ -210,9 +169,9 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
                       ? "bg-blue-500/10 border border-blue-500/30"
                       : selectedCommit === commit.id
                         ? "bg-[#2A2A32]"
-                        : "hover:bg-[#22222A]"
+                        : ""
                   } rounded-md p-2 pl-4 transition-colors cursor-pointer ${
-                    currentHead === commit.id ? "border-l-2 border-l-green-500" : ""
+                    currentHead === commit.id ? "border-l-2 border-l-blue-500" : ""
                   }`}
                   onClick={() => toggleCommitSelection(commit.id)}
                 >
@@ -220,18 +179,18 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
                   <div
                     className={`absolute -left-3 top-3 z-10 flex h-5 w-5 items-center justify-center rounded-full border ${
                       commit.isLlm
-                        ? "border-purple-500 bg-[#1A1A1E]"
+                        ? "border-blue-500 bg-[#1A1A1E]"
                         : commit.isMerge
                           ? "border-blue-500 bg-[#1A1A1E]"
-                          : "border-green-500 bg-[#1A1A1E]"
+                          : "border-blue-500 bg-[#1A1A1E]"
                     }`}
                   >
                     {commit.isLlm ? (
-                      <MessageSquare className="h-2.5 w-2.5 text-purple-400" />
+                      <MessageSquare className="h-2.5 w-2.5 text-blue-400" />
                     ) : commit.isMerge ? (
                       <GitMerge className="h-2.5 w-2.5 text-blue-400" />
                     ) : (
-                      <GitCommit className="h-2.5 w-2.5 text-green-400" />
+                      <GitCommit className="h-2.5 w-2.5 text-blue-400" />
                     )}
                   </div>
 
@@ -239,7 +198,7 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
                     <h4 className="text-xs font-medium leading-tight">
                       {commit.message}
                       {currentHead === commit.id && (
-                        <Badge className="ml-1.5 bg-green-500/20 text-[9px] text-green-400">current</Badge>
+                        <Badge className="ml-1.5 bg-blue-500/20 text-[9px] text-blue-400">current</Badge>
                       )}
                     </h4>
                     {compareMode && (
@@ -267,7 +226,7 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-6 border-green-500/20 bg-green-500/10 px-2 text-[10px] text-green-400 hover:bg-green-500/20"
+                              className="h-6 border-blue-500/20 bg-blue-500/10 px-2 text-[10px] text-blue-400 hover:bg-blue-500/20"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 makeCurrentVersion(commit.id)
@@ -305,7 +264,7 @@ export function VersionControl({ onCompareVersions }: VersionControlProps) {
                 <div
                   key={branch.name}
                   className={`flex items-center rounded-md p-2 text-xs ${
-                    branch.isActive ? "bg-blue-500/10 text-blue-400" : "hover:bg-[#22222A]"
+                    branch.isActive ? "bg-blue-500/10 text-blue-400" : ""
                   }`}
                 >
                   <GitBranch className="mr-1.5 h-3.5 w-3.5" />

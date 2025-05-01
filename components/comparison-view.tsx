@@ -15,9 +15,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 interface ComparisonViewProps {
   onClose: () => void
+  projectData?: any
 }
 
-export function ComparisonView({ onClose }: ComparisonViewProps) {
+export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
   const leftMapContainer = useRef<HTMLDivElement>(null)
   const rightMapContainer = useRef<HTMLDivElement>(null)
   const [leftMap, setLeftMap] = useState<mapboxgl.Map | null>(null)
@@ -28,13 +29,14 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
   const [leftVersion, setLeftVersion] = useState("v1")
   const [rightVersion, setRightVersion] = useState("v2")
   const [mapsInitialized, setMapsInitialized] = useState(false)
+  const [sharedMapStyle, setSharedMapStyle] = useState<string>("mapbox://styles/mapbox/light-v11")
 
-  // Sample version data
+  // Sample version data - use project data if available
   const versions = [
     {
       id: "v1",
       name: "Current Version (Apr 2023)",
-      style: "mapbox://styles/mapbox/light-v11", // Changed to light theme
+      style: projectData?.mapData?.style || "mapbox://styles/mapbox/light-v11",
       date: "Apr 30, 2023",
       author: "Alex Kim",
     },
@@ -56,7 +58,8 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
 
   // Get style URL based on version ID
   const getStyleForVersion = (versionId: string) => {
-    return versions.find((v) => v.id === versionId)?.style || "mapbox://styles/mapbox/light-v11"
+    // When using shared style, return that instead of version-specific styles
+    return sharedMapStyle
   }
 
   const swapVersions = () => {
@@ -77,8 +80,8 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       newLeftMap = new mapboxgl.Map({
         container: leftMapContainer.current,
         style: getStyleForVersion(leftVersion),
-        center: [-74.5, 40],
-        zoom: 9,
+        center: projectData?.mapData?.initialCenter || [70, 30], // Pakistan coordinates
+        zoom: projectData?.mapData?.initialZoom || 5.5, // Better zoom level for Pakistan
         attributionControl: false,
       })
 
@@ -86,8 +89,8 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       newRightMap = new mapboxgl.Map({
         container: rightMapContainer.current,
         style: getStyleForVersion(rightVersion),
-        center: [-74.5, 40],
-        zoom: 9,
+        center: projectData?.mapData?.initialCenter || [70, 30], // Pakistan coordinates
+        zoom: projectData?.mapData?.initialZoom || 5.5, // Better zoom level for Pakistan
         attributionControl: false,
       })
 
@@ -208,7 +211,7 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       setRightMap(null)
       setMapsInitialized(false)
     }
-  }, [leftVersion, rightVersion, syncMaps, showDiff])
+  }, [leftVersion, rightVersion, syncMaps, showDiff, projectData, sharedMapStyle])
 
   // Update split position
   useEffect(() => {
@@ -262,12 +265,24 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
   const leftVersionDetails = getVersionDetails(leftVersion)
   const rightVersionDetails = getVersionDetails(rightVersion)
 
+  const updateMapStyles = (newStyle: string) => {
+    setSharedMapStyle(newStyle)
+
+    if (leftMap && leftMap.getCanvas()) {
+      leftMap.setStyle(newStyle)
+    }
+
+    if (rightMap && rightMap.getCanvas()) {
+      rightMap.setStyle(newStyle)
+    }
+  }
+
   return (
     <div className="absolute inset-0 z-20 h-full w-full bg-[#1A1A1E]">
       {/* Header */}
-      <div className="absolute left-0 top-0 z-30 flex h-12 w-full items-center justify-between border-b border-border bg-[#1A1A1E] px-4">
+      <div className="absolute left-0 top-0 z-30 flex h-12 w-full items-center justify-between border-b border-border bg-[#1A1A1E] px-4 pointer-events-auto">
         <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold">Version Comparison</h2>
+          <h2 className="text-base font-semibold">Version Comparison - {projectData?.name || "Project"}</h2>
         </div>
         <TooltipProvider>
           <Tooltip>
@@ -289,7 +304,7 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       </div>
 
       {/* Version labels */}
-      <div className="absolute left-0 top-12 z-30 flex h-10 w-full items-center border-b border-border bg-[#1A1A1E]/80 backdrop-blur-sm">
+      <div className="absolute left-0 top-12 z-30 flex h-10 w-full items-center border-b border-border bg-[#1A1A1E]/80 backdrop-blur-sm pointer-events-auto">
         <div className="flex h-full items-center border-r border-border px-4" style={{ width: `${splitPosition}%` }}>
           <div className="flex items-center gap-2">
             <GitCommit className="h-3.5 w-3.5 text-green-400" />
@@ -307,7 +322,7 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       </div>
 
       {/* Maps container */}
-      <div className="absolute inset-0 top-22 pt-22" style={{ top: "5.5rem" }}>
+      <div className="absolute inset-0 top-22 pt-22 pointer-events-auto" style={{ top: "5.5rem" }}>
         <div className="flex h-full w-full">
           {/* Left map */}
           <div ref={leftMapContainer} className="h-full" style={{ width: `${splitPosition}%` }} />
@@ -321,7 +336,7 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
 
           {/* Divider handle */}
           <div
-            className="absolute top-0 z-30 h-full w-4 cursor-col-resize"
+            className="absolute top-0 z-30 h-full w-4 cursor-col-resize pointer-events-auto"
             style={{ left: `${splitPosition}%`, transform: "translateX(-50%)" }}
             onMouseDown={(e) => {
               e.preventDefault()
@@ -347,11 +362,46 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
       </div>
 
       {/* Controls */}
-      <div className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2 transform rounded-lg border border-border bg-[#1A1A1E]/95 p-3 shadow-lg backdrop-blur-sm">
+      <div className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2 transform rounded-lg border border-border bg-[#1A1A1E]/95 p-3 shadow-lg backdrop-blur-sm pointer-events-auto">
+        <div className="flex flex-col gap-1 mb-3 w-full">
+          <label className="text-xs text-muted-foreground">Map Style</label>
+          <Select value={sharedMapStyle} onValueChange={updateMapStyles}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select style" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mapbox://styles/mapbox/light-v11" className="text-xs">
+                Light
+              </SelectItem>
+              <SelectItem value="mapbox://styles/mapbox/dark-v11" className="text-xs">
+                Dark
+              </SelectItem>
+              <SelectItem value="mapbox://styles/mapbox/satellite-streets-v12" className="text-xs">
+                Satellite
+              </SelectItem>
+              <SelectItem value="mapbox://styles/mapbox/streets-v12" className="text-xs">
+                Streets
+              </SelectItem>
+              <SelectItem value="mapbox://styles/myamamabe21igis/cma4e0v7e003401qo4d8ohre2" className="text-xs">
+                Custom
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex items-center gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">Left Version</label>
-            <Select value={leftVersion} onValueChange={setLeftVersion}>
+            <Select
+              value={leftVersion}
+              onValueChange={(value) => {
+                // Prevent both selects from having the same value
+                if (value === rightVersion) {
+                  // If user selects the same version that's in right, swap them
+                  setRightVersion(leftVersion)
+                }
+                setLeftVersion(value)
+              }}
+            >
               <SelectTrigger className="h-8 w-48 text-xs">
                 <SelectValue placeholder="Select version" />
               </SelectTrigger>
@@ -371,7 +421,17 @@ export function ComparisonView({ onClose }: ComparisonViewProps) {
 
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">Right Version</label>
-            <Select value={rightVersion} onValueChange={setRightVersion}>
+            <Select
+              value={rightVersion}
+              onValueChange={(value) => {
+                // Prevent both selects from having the same value
+                if (value === leftVersion) {
+                  // If user selects the same version that's in left, swap them
+                  setLeftVersion(rightVersion)
+                }
+                setRightVersion(value)
+              }}
+            >
               <SelectTrigger className="h-8 w-48 text-xs">
                 <SelectValue placeholder="Select version" />
               </SelectTrigger>

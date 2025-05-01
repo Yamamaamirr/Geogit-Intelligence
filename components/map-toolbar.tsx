@@ -5,10 +5,12 @@ import { Layers, Plus, Minus, SplitSquareVertical, Fullscreen, MapIcon } from "l
 import type mapboxgl from "mapbox-gl"
 
 import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 
 interface MapToolbarProps {
   map: mapboxgl.Map
@@ -16,12 +18,19 @@ interface MapToolbarProps {
 }
 
 export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
-  const [opacity, setOpacity] = useState(100)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [baseMap, setBaseMap] = useState("light")
+  const [baseMap, setBaseMap] = useState("custom")
+  const [layerVisibility, setLayerVisibility] = useState({
+    buildings: true,
+    satellite: true,
+    roads: false,
+    terrain: false,
+    labels: true,
+  })
 
   // Base map styles
   const baseMapStyles = {
+    custom: "mapbox://styles/myamamabe21igis/cma4e0v7e003401qo4d8ohre2",
     light: "mapbox://styles/mapbox/light-v11",
     dark: "mapbox://styles/mapbox/dark-v11",
     satellite: "mapbox://styles/mapbox/satellite-streets-v12",
@@ -30,35 +39,13 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
 
   const handleZoomIn = () => {
     if (map) {
-      map.zoomIn()
+      map.zoomIn({ duration: 300 })
     }
   }
 
   const handleZoomOut = () => {
     if (map) {
-      map.zoomOut()
-    }
-  }
-
-  const handleOpacityChange = (value: number[]) => {
-    setOpacity(value[0])
-
-    // Apply opacity to the top layer if available
-    if (map && map.isStyleLoaded()) {
-      const layers = map.getStyle().layers || []
-      const topLayer = layers.find((layer) => layer.type === "fill" || layer.type === "line" || layer.type === "symbol")
-
-      if (topLayer) {
-        const opacity = value[0] / 100
-        if (topLayer.type === "fill") {
-          map.setPaintProperty(topLayer.id, "fill-opacity", opacity)
-        } else if (topLayer.type === "line") {
-          map.setPaintProperty(topLayer.id, "line-opacity", opacity)
-        } else if (topLayer.type === "symbol") {
-          map.setPaintProperty(topLayer.id, "icon-opacity", opacity)
-          map.setPaintProperty(topLayer.id, "text-opacity", opacity)
-        }
-      }
+      map.zoomOut({ duration: 300 })
     }
   }
 
@@ -74,20 +61,140 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
     }
   }
 
+  // Update the changeBaseMap function to properly handle the filter property
   const changeBaseMap = (style: string) => {
+    if (!map) return
+
+    // Store current sources and layers before changing style
+    const customSourcesAndLayers: {
+      sources: { [key: string]: any }
+      layers: Array<{ id: string; source: string; type: string; paint?: any; layout?: any; filter?: any }>
+    } = {
+      sources: {},
+      layers: [],
+    }
+
+    // Get all sources that aren't part of the default style (custom sources)
+    const sources = map.getStyle().sources
+    Object.keys(sources).forEach((sourceId) => {
+      // Skip mapbox sources and composite sources which are part of the base style
+      if (!sourceId.startsWith("mapbox") && sourceId !== "composite") {
+        customSourcesAndLayers.sources[sourceId] = sources[sourceId]
+      }
+    })
+
+    // Get all layers that use our custom sources
+    map.getStyle().layers.forEach((layer) => {
+      if (layer.source && customSourcesAndLayers.sources[layer.source]) {
+        // Create a clean layer configuration, only including properties that exist
+        const layerConfig: any = {
+          id: layer.id,
+          source: layer.source,
+          type: layer.type,
+        }
+
+        // Only include paint if it exists
+        if (layer["paint"]) {
+          layerConfig.paint = layer["paint"]
+        }
+
+        // Only include layout if it exists
+        if (layer["layout"]) {
+          layerConfig.layout = layer["layout"]
+        }
+
+        // Only include filter if it exists AND is an array
+        if (layer["filter"] && Array.isArray(layer["filter"])) {
+          layerConfig.filter = layer["filter"]
+        }
+
+        // Store the clean layer configuration
+        customSourcesAndLayers.layers.push(layerConfig)
+      }
+    })
+
+    // Update state
     setBaseMap(style)
+
+    // Apply the new style
     map.setStyle(baseMapStyles[style as keyof typeof baseMapStyles])
+
+    // After the style is loaded, re-add our custom sources and layers
+    map.once("style.load", () => {
+      try {
+        // Re-add sources
+        Object.keys(customSourcesAndLayers.sources).forEach((sourceId) => {
+          if (!map.getSource(sourceId)) {
+            try {
+              map.addSource(sourceId, customSourcesAndLayers.sources[sourceId])
+            } catch (error) {
+              console.warn(`Error re-adding source ${sourceId}:`, error)
+            }
+          }
+        })
+
+        // Re-add layers
+        customSourcesAndLayers.layers.forEach((layer) => {
+          if (!map.getLayer(layer.id)) {
+            try {
+              map.addLayer(layer)
+            } catch (error) {
+              console.warn(`Error re-adding layer ${layer.id}:`, error)
+            }
+          }
+        })
+      } catch (error) {
+        console.error("Error restoring custom layers after style change:", error)
+      }
+    })
+  }
+
+  const toggleLayerVisibility = (layerId: string) => {
+    // Update state
+    setLayerVisibility((prev) => ({
+      ...prev,
+      [layerId]: !prev[layerId],
+    }))
+
+    // Update map if available
+    if (map && map.isStyleLoaded()) {
+      // Map layer IDs would be different in a real implementation
+      // This is a simplified example
+      const mapLayerId = {
+        buildings: "building",
+        satellite: "satellite",
+        roads: "road",
+        terrain: "terrain",
+        labels: "labels",
+      }[layerId]
+
+      if (mapLayerId) {
+        const visibility = !layerVisibility[layerId] ? "visible" : "none"
+        try {
+          map.setLayoutProperty(mapLayerId, "visibility", visibility)
+        } catch (error) {
+          console.log(`Layer ${mapLayerId} might not exist in current style`)
+        }
+      }
+    }
   }
 
   return (
-    <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 transform flex flex-row gap-1 rounded-lg border border-border bg-[#1A1A1E]/90 p-1.5 shadow-lg backdrop-blur-sm">
+    <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 transform flex flex-row gap-1 rounded-lg border border-border bg-[#1A1A1E]/90 p-1.5 shadow-lg backdrop-blur-sm pointer-events-auto">
       <TooltipProvider>
         <Popover>
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[#2A2A2D]">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:bg-[#2A2A2D] transition-colors duration-200 relative group"
+                >
                   <Layers className="h-4 w-4" />
+                  <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center bg-blue-500 text-[10px] text-white rounded-full">
+                    {Object.values(layerVisibility).filter(Boolean).length}
+                  </span>
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>
@@ -95,29 +202,45 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
               <p>Layer Controls</p>
             </TooltipContent>
           </Tooltip>
-          <PopoverContent side="top" className="w-64 p-3">
-            <div className="space-y-3">
-              <h3 className="text-xs font-medium">Layer Controls</h3>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs">Building Footprints</span>
-                  <Button variant="outline" size="sm" className="h-6 text-xs">
-                    Visible
-                  </Button>
+          <PopoverContent
+            side="top"
+            align="center"
+            alignOffset={-40}
+            className="w-48 p-0 bg-zinc-900 border-zinc-800 shadow-xl layer-controls-popover mb-2"
+          >
+            <div className="p-2 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="text-xs font-medium flex items-center">
+                <Layers className="h-3 w-3 mr-1.5 text-blue-400" />
+                Layer Controls
+              </h3>
+              <Badge className="bg-blue-500/20 text-[9px] text-blue-400 px-1 h-4">
+                {Object.values(layerVisibility).filter(Boolean).length}
+              </Badge>
+            </div>
+
+            <div className="p-2 space-y-1 max-h-[200px] overflow-y-auto">
+              {[
+                { id: "buildings", name: "Building Footprints" },
+                { id: "satellite", name: "Satellite Imagery" },
+                { id: "roads", name: "Road Network" },
+                { id: "terrain", name: "Terrain" },
+                { id: "labels", name: "Map Labels" },
+              ].map((layer) => (
+                <div
+                  key={layer.id}
+                  className="flex items-center space-x-2 rounded-md p-1 hover:bg-zinc-800/50 transition-colors"
+                >
+                  <Checkbox
+                    id={`layer-${layer.id}`}
+                    checked={layerVisibility[layer.id as keyof typeof layerVisibility]}
+                    onCheckedChange={() => toggleLayerVisibility(layer.id)}
+                    className="h-3.5 w-3.5 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                  />
+                  <Label htmlFor={`layer-${layer.id}`} className="text-xs cursor-pointer flex-1">
+                    {layer.name}
+                  </Label>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs">Satellite Imagery</span>
-                  <Button variant="outline" size="sm" className="h-6 text-xs">
-                    Visible
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs">Road Network</span>
-                  <Button variant="outline" size="sm" className="h-6 text-xs">
-                    Hidden
-                  </Button>
-                </div>
-              </div>
+              ))}
             </div>
           </PopoverContent>
         </Popover>
@@ -126,7 +249,11 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[#2A2A2D]">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:bg-[#2A2A2D] transition-colors duration-200"
+                >
                   <MapIcon className="h-4 w-4" />
                 </Button>
               </PopoverTrigger>
@@ -135,7 +262,7 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
               <p>Base Map</p>
             </TooltipContent>
           </Tooltip>
-          <PopoverContent side="top" className="w-64 p-3">
+          <PopoverContent side="top" align="center" alignOffset={-40} className="w-48 p-3 mb-2">
             <div className="space-y-3">
               <h3 className="text-xs font-medium">Base Map Style</h3>
               <Select value={baseMap} onValueChange={changeBaseMap}>
@@ -143,6 +270,9 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
                   <SelectValue placeholder="Select style" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="custom" className="text-xs">
+                    Overcast
+                  </SelectItem>
                   <SelectItem value="light" className="text-xs">
                     Light
                   </SelectItem>
@@ -166,7 +296,7 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="relative h-8 w-8 overflow-hidden hover:bg-[#2A2A2D]"
+              className="relative h-8 w-8 overflow-hidden hover:bg-[#2A2A2D] transition-colors duration-200"
               onClick={onCompareClick}
             >
               <div className="absolute inset-0 flex items-center justify-center">
@@ -182,7 +312,12 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[#2A2A2D]" onClick={handleZoomIn}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-[#2A2A2D] transition-colors duration-200"
+              onClick={handleZoomIn}
+            >
               <Plus className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -193,7 +328,12 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[#2A2A2D]" onClick={handleZoomOut}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-[#2A2A2D] transition-colors duration-200"
+              onClick={handleZoomOut}
+            >
               <Minus className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -204,7 +344,12 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[#2A2A2D]" onClick={toggleFullscreen}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-[#2A2A2D] transition-colors duration-200"
+              onClick={toggleFullscreen}
+            >
               <Fullscreen className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -212,11 +357,6 @@ export function MapToolbar({ map, onCompareClick }: MapToolbarProps) {
             <p>{isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}</p>
           </TooltipContent>
         </Tooltip>
-
-        <div className="flex items-center gap-1.5 px-1.5">
-          <p className="text-xs text-muted-foreground">Opacity</p>
-          <Slider value={[opacity]} max={100} step={1} className="w-20" onValueChange={handleOpacityChange} />
-        </div>
       </TooltipProvider>
     </div>
   )
