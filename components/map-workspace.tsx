@@ -483,7 +483,6 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
           try {
             // Create a unique source ID for this dataset
             const sourceId = `source-${newDataset.id || Date.now()}`
-            const layerId = `layer-${newDataset.id || Date.now()}`
 
             // Make sure the map is fully loaded before adding layers
             const addVectorLayerToMap = () => {
@@ -495,72 +494,56 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                 })
               }
 
-              // Determine the layer type based on the first feature's geometry type
-              let layerType = "fill"
-              if (
-                newDataset.geometry_data &&
-                newDataset.geometry_data.features &&
-                newDataset.geometry_data.features.length > 0
-              ) {
-                const firstFeature = newDataset.geometry_data.features[0]
-                if (firstFeature && firstFeature.geometry) {
-                  if (firstFeature.geometry.type === "Point") {
-                    layerType = "circle"
-                  } else if (
-                    firstFeature.geometry.type === "LineString" ||
-                    firstFeature.geometry.type === "MultiLineString"
-                  ) {
-                    layerType = "line"
-                  }
-                }
+              // Instead of filtering by geometry type, create a single layer that handles all geometry types
+              const layerId = `layer-${newDataset.id || Date.now()}`
+
+              // Add a layer for polygons
+              const polygonLayerId = `${layerId}-polygons`
+              if (!currentMap.getLayer(polygonLayerId)) {
+                currentMap.addLayer({
+                  id: polygonLayerId,
+                  type: "fill",
+                  source: sourceId,
+                  paint: {
+                    "fill-color": "#3b82f6",
+                    "fill-opacity": 0.6,
+                    "fill-outline-color": "#2563eb",
+                  },
+                })
               }
 
-              // Add the layer if it doesn't exist
-              if (!currentMap.getLayer(layerId)) {
-                try {
-                  // Add appropriate layer based on geometry type
-                  const layerConfig: any = {
-                    id: layerId,
-                    source: sourceId,
-                    // Always specify a valid type - this is required
-                    type: layerType, // This will be "fill", "line", or "circle"
-                  }
-
-                  // Set paint properties based on geometry type
-                  if (layerType === "fill") {
-                    layerConfig.paint = {
-                      "fill-color": "#3b82f6",
-                      "fill-opacity": 0.6,
-                      "fill-outline-color": "#2563eb",
-                    }
-                  } else if (layerType === "line") {
-                    layerConfig.paint = {
-                      "line-color": "#3b82f6",
-                      "line-width": 2,
-                    }
-                  } else if (layerType === "circle") {
-                    layerConfig.paint = {
-                      "circle-color": "#3b82f6",
-                      "circle-radius": 6,
-                      "circle-stroke-width": 1,
-                      "circle-stroke-color": "#2563eb",
-                    }
-                  }
-
-                  // Add the layer with the clean configuration
-                  currentMap.addLayer(layerConfig)
-                  console.log(`Successfully added ${layerType} layer: ${layerId}`)
-                } catch (error) {
-                  console.error(`Error adding ${layerType} layer:`, error)
-                }
+              // Add a layer for lines
+              const lineLayerId = `${layerId}-lines`
+              if (!currentMap.getLayer(lineLayerId)) {
+                currentMap.addLayer({
+                  id: lineLayerId,
+                  type: "line",
+                  source: sourceId,
+                  paint: {
+                    "line-color": "#3b82f6",
+                    "line-width": 2,
+                  },
+                })
               }
 
-              // Calculate bounds of the geometry data if it exists
-              if (
-                newDataset.geometry_data &&
-                newDataset.geometry_data.features &&
-                newDataset.geometry_data.features.length > 0
-              ) {
+              // Add a layer for points
+              const pointLayerId = `${layerId}-points`
+              if (!currentMap.getLayer(pointLayerId)) {
+                currentMap.addLayer({
+                  id: pointLayerId,
+                  type: "circle",
+                  source: sourceId,
+                  paint: {
+                    "circle-radius": 6,
+                    "circle-color": "#3b82f6",
+                    "circle-stroke-width": 1,
+                    "circle-stroke-color": "#2563eb",
+                  },
+                })
+              }
+
+              // Calculate bounds of the geometry data
+              if (newDataset.geometry_data.features.length > 0) {
                 const bounds = new mapboxgl.LngLatBounds()
                 let hasBounds = false
 
@@ -835,7 +818,11 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="assistant" className="h-[calc(100%-41px)] p-0 overflow-hidden">
-                  <LlmAssistant projectName={projectData.name} />
+                  <LlmAssistant
+                    projectName={projectData.name}
+                    datasets={projectData.mapData.datasets || []}
+                    map={mapInstanceRef.current}
+                  />
                 </TabsContent>
                 <TabsContent value="datasets" className="h-[calc(100%-41px)] p-0">
                   <DatasetInspector datasets={projectData.mapData.datasets || []} map={mapInstanceRef.current} />

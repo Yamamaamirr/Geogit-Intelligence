@@ -58,7 +58,9 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "zod": "^3.24.1",
-    "mapbox-gl": "latest"
+    "mapbox-gl": "latest",
+    "jszip": "^3.10.1",
+    "shpjs": "^4.0.4"
   },
   "devDependencies": {
     "@types/node": "^22",

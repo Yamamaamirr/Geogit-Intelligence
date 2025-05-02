@@ -1,27 +1,73 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useRef, useEffect } from "react"
-import { Send, Sparkles, Check, X } from "lucide-react"
+import { Send, Sparkles, Check, X, Loader2, FileUp, Layers } from "lucide-react"
+import type mapboxgl from "mapbox-gl"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingIndicator } from "@/components/loading-indicator"
+import { Badge } from "@/components/ui/badge"
+import { ShapefileProcessor } from "@/components/shapefile-processor"
+import { LayerSelector } from "@/components/ui/layer-selector"
+import { toast } from "@/components/ui/use-toast"
 
 interface LlmAssistantProps {
   projectName?: string
+  datasets?: Array<{
+    id: string
+    name: string
+    type: string
+    format?: string
+    visible: boolean
+  }>
+  map?: mapboxgl.Map | null
 }
 
-export function LlmAssistant({ projectName = "" }: LlmAssistantProps) {
+export function LlmAssistant({ projectName = "", datasets = [], map = null }: LlmAssistantProps) {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today?`,
+      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today? Type @ to select layers for processing.`,
     },
   ])
   const [input, setInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showLayerSelector, setShowLayerSelector] = useState(false)
+  const [selectedLayers, setSelectedLayers] = useState<Array<{ id: string; name: string }>>([])
+  const [cursorPosition, setCursorPosition] = useState(0)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [processingResult, setProcessingResult] = useState<any>(null)
   const endOfMessagesRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const shapefileProcessorRef = useRef<ShapefileProcessor | null>(null)
+
+  // Initialize the shapefile processor
+  useEffect(() => {
+    if (map) {
+      shapefileProcessorRef.current = new ShapefileProcessor(
+        map,
+        (result) => {
+          setProcessingResult(result)
+          toast({
+            title: "Processing complete",
+            description: `Successfully processed ${result.geojson.features.length} features`,
+          })
+        },
+        (error) => {
+          toast({
+            title: "Processing error",
+            description: error.message,
+            variant: "destructive",
+          })
+        },
+      )
+    }
+  }, [map])
 
   const scrollToBottom = () => {
     if (endOfMessagesRef.current) {
@@ -36,25 +82,137 @@ export function LlmAssistant({ projectName = "" }: LlmAssistantProps) {
     })
   }, [messages])
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  // Monitor input for '@' character to trigger layer selector
+  useEffect(() => {
+    if (input.includes("@") && !showLayerSelector) {
+      setShowLayerSelector(true)
+    }
+  }, [input, showLayerSelector])
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value)
+    setCursorPosition(e.target.selectionStart || 0)
+  }
+
+  const toggleLayerSelection = (layer: { id: string; name: string }) => {
+    setSelectedLayers((prev) => {
+      const isSelected = prev.some((l) => l.id === layer.id)
+      if (isSelected) {
+        return prev.filter((l) => l.id !== layer.id)
+      } else {
+        return [...prev, layer]
+      }
+    })
+  }
+
+  const removeSelectedLayer = (layerId: string) => {
+    setSelectedLayers((prev) => prev.filter((layer) => layer.id !== layerId))
+  }
+
+  const handleSend = async () => {
+    if (!input.trim() && selectedLayers.length === 0) return
 
     // Add user message
-    setMessages([...messages, { role: "user", content: input }])
+    const userMessage = input.trim()
+      ? input
+      : `Process selected layers: ${selectedLayers.map((l) => l.name).join(", ")}`
+    setMessages([...messages, { role: "user", content: userMessage }])
     setInput("")
+    setShowLayerSelector(false)
 
-    // Simulate LLM processing
-    setIsProcessing(true)
-    setTimeout(() => {
-      setIsProcessing(false)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `I've analyzed your request for the ${projectName || "project"}. This operation will create a new dataset with the following properties:\n\n• Source: Satellite Imagery 2023\n• Clip Boundary: Park Boundaries (vector)\n• Output Format: GeoTIFF\n• Resolution: Preserved from source\n\nWould you like me to proceed with this operation?`,
-        },
-      ])
-    }, 5000) // Longer timeout to see the loading indicator in action
+    // If there are selected layers, process them
+    if (selectedLayers.length > 0) {
+      setIsUploading(true)
+      setUploadProgress(0)
+
+      try {
+        // Set up progress updates
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => Math.min(prev + 10, 90))
+        }, 300)
+
+        // Process the selected layers
+        if (shapefileProcessorRef.current && map) {
+          try {
+            // Send the data to the real backend
+            const result = await shapefileProcessorRef.current.processLayers(selectedLayers, input.trim())
+
+            clearInterval(progressInterval)
+            setUploadProgress(100)
+            setIsProcessing(true)
+
+            // Add assistant response
+            setTimeout(() => {
+              setIsProcessing(false)
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: `I've processed your request with the selected layers: ${selectedLayers
+                    .map((l) => l.name)
+                    .join(
+                      ", ",
+                    )}.\n\nA new layer has been created and added to your map. You can now visualize the results.`,
+                },
+              ])
+
+              // Reset selected layers after processing
+              setSelectedLayers([])
+              setIsUploading(false)
+            }, 1000)
+          } catch (error) {
+            clearInterval(progressInterval)
+            console.error("Error processing layers:", error)
+            setIsUploading(false)
+            setIsProcessing(false)
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: `I'm sorry, there was an error processing your request: ${
+                  error instanceof Error ? error.message : "Unknown error"
+                }. Please try again.`,
+              },
+            ])
+          }
+        } else {
+          // If shapefile processor or map is not available
+          clearInterval(progressInterval)
+          setIsUploading(false)
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: "I'm sorry, the map is not available for processing. Please try again later.",
+            },
+          ])
+        }
+      } catch (error) {
+        console.error("Error processing layers:", error)
+        setIsUploading(false)
+        setIsProcessing(false)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "I'm sorry, there was an error processing your request. Please try again.",
+          },
+        ])
+      }
+    } else {
+      // Regular message without layers
+      setIsProcessing(true)
+      setTimeout(() => {
+        setIsProcessing(false)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `I've analyzed your request for the ${projectName || "project"}. This operation will create a new dataset with the following properties:\n\n• Source: Satellite Imagery 2023\n• Clip Boundary: Park Boundaries (vector)\n• Output Format: GeoTIFF\n• Resolution: Preserved from source\n\nWould you like me to proceed with this operation?`,
+          },
+        ])
+      }, 2000)
+    }
   }
 
   return (
@@ -83,6 +241,28 @@ export function LlmAssistant({ projectName = "" }: LlmAssistantProps) {
                 </div>
               </div>
             ))}
+
+            {isUploading && (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-lg p-2.5 bg-gradient-to-br from-[#2A2A32] to-[#2D2D38] text-white shadow-md">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <FileUp className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
+                      <span className="text-xs">Uploading selected layers...</span>
+                    </div>
+                    <div className="w-full bg-zinc-800 rounded-full h-1">
+                      <div
+                        className="bg-blue-500 h-1 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      {uploadProgress < 100 ? "Preparing data..." : "Processing..."}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div ref={endOfMessagesRef} />
           </div>
@@ -117,27 +297,63 @@ export function LlmAssistant({ projectName = "" }: LlmAssistantProps) {
           </div>
         )}
 
-      <div className="border-t border-border p-2">
+      {/* Selected layers display */}
+      {selectedLayers.length > 0 && (
+        <div className="border-t border-border p-2 bg-zinc-900/50">
+          <div className="flex items-center gap-1 mb-1">
+            <Layers className="h-3 w-3 text-blue-400" />
+            <span className="text-[10px] text-zinc-400">Selected layers:</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {selectedLayers.map((layer) => (
+              <Badge key={layer.id} className="bg-blue-500/20 text-blue-400 text-[10px] flex items-center gap-1">
+                {layer.name}
+                <X className="h-3 w-3 cursor-pointer hover:text-white" onClick={() => removeSelectedLayer(layer.id)} />
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-border p-2 relative">
         <div className="flex items-center gap-2">
           <Input
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask GeoLLM about ${projectName || "your data"}...`}
-            className="h-8 bg-[#22222A] text-xs"
+            onChange={handleInputChange}
+            placeholder={`Ask GeoLLM about ${projectName || "your data"}... (type @ to select layers)`}
+            className="h-8 bg-[#22222A] text-xs pr-8"
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSend()
+              if (e.key === "@") setShowLayerSelector(true)
             }}
-            disabled={isProcessing}
+            disabled={isProcessing || isUploading}
           />
           <Button
             size="icon"
             className="h-8 w-8 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
             onClick={handleSend}
-            disabled={isProcessing}
+            disabled={isProcessing || isUploading}
           >
-            <Send className="h-3.5 w-3.5 text-blue-400" />
+            {isUploading || isProcessing ? (
+              <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5 text-blue-400" />
+            )}
           </Button>
         </div>
+
+        {/* Layer selector dropdown */}
+        {showLayerSelector && datasets.length > 0 && (
+          <div className="absolute bottom-full left-0 w-full">
+            <LayerSelector
+              datasets={datasets}
+              selectedLayers={selectedLayers}
+              onSelectLayer={toggleLayerSelection}
+              onClose={() => setShowLayerSelector(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
