@@ -177,7 +177,7 @@ export function AddDatasetDialog({ open, onOpenChange, onAddDataset, projectId }
     try {
       // Send to the appropriate endpoint based on type
       // IMPORTANT: Use relative URL instead of absolute with localhost
-      const endpoint = `http://localhost:5000/api/projects/${projectId}/upload/${datasetForm.type.toLowerCase()}`
+      const endpoint = `http://10.7.237.128:5000/api/projects/${projectId}/upload/${datasetForm.type.toLowerCase()}`
 
       console.log("Sending request to:", endpoint)
 

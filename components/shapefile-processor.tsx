@@ -13,7 +13,7 @@ export class ShapefileProcessor {api
   private map: mapboxgl.Map | null
   private onProcessComplete?: (result: any) => void
   private onProcessError?: (error: Error) => void
-  private backendUrl = "http://10.7.236.226:5000/voronoi" // Updated endpoint URL
+  private backendUrl = "http://10.7.237.128:5000/voronoi" // Updated endpoint URL
 
   constructor(
     map: mapboxgl.Map | null,
@@ -145,7 +145,7 @@ export class ShapefileProcessor {api
         formData.append("file", file)
         
         // Send the request to the backend
-        const endpoint = `http://localhost:5000/api/projects/${projectId}/upload/vector`
+        const endpoint = `http://10.7.237.128:5000/api/projects/${projectId}/upload/vector`
         console.log(`📤 Sending to endpoint: ${endpoint}`)
         
         const uploadResponse = await fetch(endpoint, {
