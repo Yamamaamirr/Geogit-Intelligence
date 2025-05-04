@@ -120,12 +120,15 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
     setInput("")
     setShowLayerSelector(false)
 
-    // If there are selected layers, process them
-    if (selectedLayers.length > 0) {
-      setIsUploading(true)
-      setUploadProgress(0)
+    // Set processing state
+    setIsProcessing(true)
 
-      try {
+    try {
+      if (selectedLayers.length > 0) {
+        // If there are selected layers, process them
+        setIsUploading(true)
+        setUploadProgress(0)
+
         // Set up progress updates
         const progressInterval = setInterval(() => {
           setUploadProgress((prev) => Math.min(prev + 10, 90))
@@ -134,12 +137,11 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
         // Process the selected layers
         if (shapefileProcessorRef.current && map) {
           try {
-            // Send the data to the real backend
+            // Send the data to the backend
             const result = await shapefileProcessorRef.current.processLayers(selectedLayers, input.trim())
 
             clearInterval(progressInterval)
             setUploadProgress(100)
-            setIsProcessing(true)
 
             // Add assistant response
             setTimeout(() => {
@@ -177,8 +179,8 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
           }
         } else {
           // If shapefile processor or map is not available
-          clearInterval(progressInterval)
           setIsUploading(false)
+          setIsProcessing(false)
           setMessages((prev) => [
             ...prev,
             {
@@ -187,31 +189,57 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
             },
           ])
         }
-      } catch (error) {
-        console.error("Error processing layers:", error)
-        setIsUploading(false)
-        setIsProcessing(false)
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "I'm sorry, there was an error processing your request. Please try again.",
-          },
-        ])
+      } else {
+        // For text-only prompts (no layers selected)
+        if (shapefileProcessorRef.current) {
+          try {
+            // Send the text prompt to the backend
+            const result = await shapefileProcessorRef.current.processTextPrompt(input.trim())
+
+            // Add assistant response with the result from the backend
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content:
+                  result.message ||
+                  `I've analyzed your request for the ${projectName || "project"}. ${result.details || ""}`,
+              },
+            ])
+          } catch (error) {
+            console.error("Error processing text prompt:", error)
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: `I'm sorry, there was an error processing your request: ${
+                  error instanceof Error ? error.message : "Unknown error"
+                }. Please try again.`,
+              },
+            ])
+          }
+        } else {
+          // Fallback if shapefile processor is not available
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: `I've analyzed your request for the ${projectName || "project"}. This operation will create a new dataset with the following properties:\n\n• Source: Satellite Imagery 2023\n• Clip Boundary: Park Boundaries (vector)\n• Output Format: GeoTIFF\n• Resolution: Preserved from source\n\nWould you like me to proceed with this operation?`,
+            },
+          ])
+        }
       }
-    } else {
-      // Regular message without layers
-      setIsProcessing(true)
-      setTimeout(() => {
-        setIsProcessing(false)
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `I've analyzed your request for the ${projectName || "project"}. This operation will create a new dataset with the following properties:\n\n• Source: Satellite Imagery 2023\n• Clip Boundary: Park Boundaries (vector)\n• Output Format: GeoTIFF\n• Resolution: Preserved from source\n\nWould you like me to proceed with this operation?`,
-          },
-        ])
-      }, 2000)
+    } catch (error) {
+      console.error("Error in handleSend:", error)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "I'm sorry, there was an error processing your request. Please try again.",
+        },
+      ])
+    } finally {
+      setIsProcessing(false)
     }
   }
 

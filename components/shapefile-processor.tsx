@@ -9,11 +9,12 @@ interface ShapefileProcessorProps {
   onProcessError?: (error: Error) => void
 }
 
-export class ShapefileProcessor {api
+export class ShapefileProcessor {
+  api
   private map: mapboxgl.Map | null
   private onProcessComplete?: (result: any) => void
   private onProcessError?: (error: Error) => void
-  private backendUrl = "http://10.7.237.128:5000/voronoi" // Updated endpoint URL
+  private backendUrl = `${process.env.NEXT_PUBLIC_API_URL}/voronoi` // Updated endpoint URL
 
   constructor(
     map: mapboxgl.Map | null,
@@ -132,34 +133,34 @@ export class ShapefileProcessor {api
       // Send the processed GeoJSON to the backend
       try {
         // Get the project ID from the URL or from a prop
-        const urlParts = window.location.pathname.split('/')
-        const projectIdIndex = urlParts.findIndex(part => part === 'projects') + 1
-        const projectId = projectIdIndex > 0 && projectIdIndex < urlParts.length ? urlParts[projectIdIndex] : 'default'
-        
+        const urlParts = window.location.pathname.split("/")
+        const projectIdIndex = urlParts.findIndex((part) => part === "projects") + 1
+        const projectId = projectIdIndex > 0 && projectIdIndex < urlParts.length ? urlParts[projectIdIndex] : "default"
+
         console.log(`📤 Sending processed GeoJSON to backend for project: ${projectId}`)
-        
+
         // Create a FormData object to send to the backend
         const formData = new FormData()
         const geojsonBlob = new Blob([JSON.stringify(geojson)], { type: "application/geo+json" })
         const file = new File([geojsonBlob], `processed_result_${Date.now()}.geojson`, { type: "application/geo+json" })
         formData.append("file", file)
-        
+
         // Send the request to the backend
-        const endpoint = `http://10.7.237.128:5000/api/projects/${projectId}/upload/vector`
+        const endpoint = `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/upload/vector`
         console.log(`📤 Sending to endpoint: ${endpoint}`)
-        
+
         const uploadResponse = await fetch(endpoint, {
           method: "POST",
           body: formData,
         })
-        
+
         if (!uploadResponse.ok) {
           console.warn(`⚠️ Backend upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`)
           console.log("⚠️ Continuing with local display only")
         } else {
           const uploadResult = await uploadResponse.json()
           console.log("✅ Backend upload successful:", uploadResult)
-          
+
           // You can update the geojson with any modifications from the backend if needed
           if (uploadResult.geometry_data) {
             geojson = uploadResult.geometry_data
@@ -428,6 +429,63 @@ export class ShapefileProcessor {api
       if (this.onProcessError) {
         this.onProcessError(error instanceof Error ? error : new Error("Unknown error sending layers to backend"))
       }
+      throw error
+    }
+  }
+
+  async processTextPrompt(prompt: string) {
+    try {
+      if (!prompt.trim()) {
+        throw new Error("Empty prompt provided")
+      }
+
+      console.log(`📤 Sending text prompt to backend: "${prompt}"`)
+
+      // Create a FormData object with just the prompt
+      const formData = new FormData()
+      formData.append("prompt", prompt)
+      formData.append("type", "text_only")
+
+      // Send the request to the backend
+      const response = await fetch(this.backendUrl, {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        let errorMessage = `Server responded with ${response.status}: ${response.statusText}`
+        try {
+          const errorText = await response.text()
+          errorMessage += `. Details: ${errorText}`
+        } catch (e) {
+          // If we can't read the error text, just use the status
+        }
+        throw new Error(errorMessage)
+      }
+
+      // Try to parse the response as JSON first
+      try {
+        const jsonResponse = await response.json()
+        console.log("📥 Received JSON response:", jsonResponse)
+        return {
+          success: true,
+          message: jsonResponse.message || "I've processed your request successfully.",
+          details: jsonResponse.details || "",
+          data: jsonResponse,
+        }
+      } catch (jsonError) {
+        // If not JSON, try to get as text
+        const textResponse = await response.text()
+        console.log("📥 Received text response:", textResponse)
+        return {
+          success: true,
+          message: "I've processed your request successfully.",
+          details: textResponse.substring(0, 500), // Limit the length
+          data: { text: textResponse },
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error processing text prompt:", error)
       throw error
     }
   }
