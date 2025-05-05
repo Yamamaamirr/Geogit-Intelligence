@@ -7,23 +7,31 @@ interface ShapefileProcessorProps {
   map: mapboxgl.Map | null
   onProcessComplete?: (result: any) => void
   onProcessError?: (error: Error) => void
+  projectId?: string
+  onAddDataset?: (dataset: any) => void
 }
 
 export class ShapefileProcessor {
-  api
+
   private map: mapboxgl.Map | null
   private onProcessComplete?: (result: any) => void
   private onProcessError?: (error: Error) => void
   private backendUrl = `${process.env.NEXT_PUBLIC_API_URL}/voronoi` // Updated endpoint URL
+  private projectId: string
+  private onAddDataset?: (dataset: any) => void
 
   constructor(
     map: mapboxgl.Map | null,
     onProcessComplete?: (result: any) => void,
     onProcessError?: (error: Error) => void,
+    projectId: string = "default",
+    onAddDataset?: (dataset: any) => void
   ) {
     this.map = map
     this.onProcessComplete = onProcessComplete
     this.onProcessError = onProcessError
+    this.projectId = projectId
+    this.onAddDataset = onAddDataset
   }
 
   async processShapefileResponse(responseData: ArrayBuffer) {
@@ -132,12 +140,8 @@ export class ShapefileProcessor {
 
       // Send the processed GeoJSON to the backend
       try {
-        // Get the project ID from the URL or from a prop
-        const urlParts = window.location.pathname.split("/")
-        const projectIdIndex = urlParts.findIndex((part) => part === "projects") + 1
-        const projectId = projectIdIndex > 0 && projectIdIndex < urlParts.length ? urlParts[projectIdIndex] : "default"
-
-        console.log(`📤 Sending processed GeoJSON to backend for project: ${projectId}`)
+        // Use the projectId from the class property instead of extracting from URL
+        console.log(`📤 Sending processed GeoJSON to backend for project: ${this.projectId}`)
 
         // Create a FormData object to send to the backend
         const formData = new FormData()
@@ -146,7 +150,7 @@ export class ShapefileProcessor {
         formData.append("file", file)
 
         // Send the request to the backend
-        const endpoint = `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/upload/vector`
+        const endpoint = `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${this.projectId}/upload/vector`
         console.log(`📤 Sending to endpoint: ${endpoint}`)
 
         const uploadResponse = await fetch(endpoint, {

@@ -822,6 +822,9 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                     projectName={projectData.name}
                     datasets={projectData.mapData.datasets || []}
                     map={mapInstanceRef.current}
+                    projectId={projectData.id}
+                    onAddDataset={handleAddDataset}
+
                   />
                 </TabsContent>
                 <TabsContent value="datasets" className="h-[calc(100%-41px)] p-0">
