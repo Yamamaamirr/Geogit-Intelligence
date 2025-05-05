@@ -38,14 +38,19 @@ export class ShapefileProcessor {
   async processShapefileResponse(responseData: ArrayBuffer) {
 
 const dataset = {
-    id: responseData.version_id || `d${Date.now()}`,
-    name: responseData.name || '', // Provide fallback if necessary
-    type: responseData.type || datasetForm.type,
-    format: responseData.format || '',
-    crs: responseData.crs || '',
-    status: "new",
-    version_number: responseData.version_number || 1,
-  };
+  id: responseData.id || `d${Date.now()}`,       // Fixed: Use `id` instead of `version_id`
+  name: responseData.name || 'untitled',        // More neutral fallback
+  type: responseData.type || "vector",
+  format: (responseData.format || 'geojson').toLowerCase(), // Standardize to lowercase
+  crs: responseData.crs || 'EPSG:4326',
+  status: "new",
+  version_number: responseData.version_number || "1", // Keep as string
+  geometry_data: responseData.geometry_data || { 
+    type: "FeatureCollection", 
+    features: [] 
+  },
+  features_count: responseData.features_count || 0
+};
 
   // Add type-specific properties
   if (dataset.type === "vector") {
@@ -60,8 +65,10 @@ const dataset = {
     dataset.file_path = responseData.file_path || '';
   }
 
-  onAddDataset(dataset);
-
+  // Call through the class instance
+  if (this.onAddDataset) {
+    this.onAddDataset(dataset);
+  }
 
     // try {
     //   // Log detailed information about the response
@@ -469,7 +476,7 @@ const dataset = {
       }
 
       // Get the response as an ArrayBuffer
-      const responseData = await response.arrayBuffer()
+const responseData = await response.json(); // ✅ Correct for JSON APIs
       console.log(`📥 Received response: ${responseData.byteLength} bytes`)
 
       // Process the response
