@@ -369,6 +369,8 @@ const dataset = {
     try {
       // Get the source for this layer
       const layer = this.map.getLayer(layerId)
+console.log(layer);
+
       if (!layer) return null
 
       const sourceId = layer.source as string
@@ -391,7 +393,7 @@ const dataset = {
     }
   }
 
-  async processLayers(layers: Array<{ id: string; name: string }>, prompt: string) {
+  async processLayers(layers: Array<{ id: string; name: string; type: string; format?: string }>, prompt: string) {
     try {
 
 console.log(layers);

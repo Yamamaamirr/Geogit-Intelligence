@@ -39,7 +39,7 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
   const [input, setInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showLayerSelector, setShowLayerSelector] = useState(false)
-  const [selectedLayers, setSelectedLayers] = useState<Array<{ id: string; name: string }>>([])
+  const [selectedLayers, setSelectedLayers] = useState<Array<{ id: string; name: string; type: string; format?: string }>>([])
   const [cursorPosition, setCursorPosition] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -99,7 +99,7 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
     setCursorPosition(e.target.selectionStart || 0)
   }
 
-  const toggleLayerSelection = (layer: { id: string; name: string }) => {
+  const toggleLayerSelection = (layer: { id: string; name: string; type: string; format?: string }) => {
     setSelectedLayers((prev) => {
       const isSelected = prev.some((l) => l.id === layer.id)
       if (isSelected) {

@@ -11,8 +11,8 @@ interface LayerSelectorProps {
     format?: string
     visible: boolean
   }>
-  selectedLayers: Array<{ id: string; name: string }>
-  onSelectLayer: (layer: { id: string; name: string }) => void
+  selectedLayers: Array<{ id: string; name: string; type: string; format?: string }>
+  onSelectLayer: (layer: { id: string; name: string; type: string; format?: string }) => void
   onClose: () => void
 }
 
@@ -53,7 +53,12 @@ export function LayerSelector({ datasets, selectedLayers, onSelectLayer, onClose
                 ? "bg-blue-500/20 text-blue-400"
                 : "hover:bg-zinc-800 text-zinc-300"
             }`}
-            onClick={() => onSelectLayer({ id: dataset.id, name: dataset.name })}
+            onClick={() => onSelectLayer({ 
+              id: dataset.id, 
+              name: dataset.name, 
+              type: dataset.type,
+              format: dataset.format 
+            })}
           >
             <div className="flex items-center gap-1.5">
               {dataset.type === "vector" ? <MapPin className="h-3 w-3" /> : <Layers className="h-3 w-3" />}
