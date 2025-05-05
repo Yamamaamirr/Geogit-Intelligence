@@ -109,6 +109,7 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
     setSelectedLayers((prev) => prev.filter((layer) => layer.id !== layerId))
   }
 
+  // Update the handleSend function to better handle simple prompts
   const handleSend = async () => {
     if (!input.trim() && selectedLayers.length === 0) return
 
@@ -193,10 +194,14 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null }: Ll
         // For text-only prompts (no layers selected)
         if (shapefileProcessorRef.current) {
           try {
-            // Send the text prompt to the backend
+            // Check for simple greetings to avoid unnecessary backend calls
+            const simpleGreetings = ["hi", "hello", "hey", "greetings"]
+            const trimmedInput = input.trim().toLowerCase()
+
+            // Send the text prompt to the processor (which now handles simple greetings locally)
             const result = await shapefileProcessorRef.current.processTextPrompt(input.trim())
 
-            // Add assistant response with the result from the backend
+            // Add assistant response with the result
             setMessages((prev) => [
               ...prev,
               {
