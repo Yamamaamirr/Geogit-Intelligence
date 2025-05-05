@@ -172,10 +172,10 @@ export class ShapefileProcessor {
       }
 
       // Continue with adding to the map as before
-      if (this.map) {
-        const sourceId = `processed-source-${Date.now()}`
-        const layerId = `processed-layer-${Date.now()}`
+      const sourceId = `processed-source-${Date.now()}`
+      const layerId = `processed-layer-${Date.now()}`
 
+      if (this.map) {
         if (!this.map.getSource(sourceId)) {
           this.map.addSource(sourceId, {
             type: "geojson",
@@ -308,26 +308,47 @@ export class ShapefileProcessor {
     if (!this.map) return null
 
     try {
+      console.log(`🔍 Attempting to get data for layer ID: ${layerId}`)
+
       // Get the source for this layer
       const layer = this.map.getLayer(layerId)
-      if (!layer) return null
+      if (!layer) {
+        console.warn(`⚠️ Layer not found in map: ${layerId}`)
+
+        // Log all available layers for debugging
+        const availableLayers = this.map.getStyle().layers.map((l) => l.id)
+        console.log(`🔍 Available layers in map: ${availableLayers.join(", ")}`)
+
+        return null
+      }
+
+      console.log(`✅ Found layer: ${layerId}, type: ${layer.type}, source: ${layer.source}`)
 
       const sourceId = layer.source as string
-      if (!sourceId) return null
+      if (!sourceId) {
+        console.warn(`⚠️ No source found for layer: ${layerId}`)
+        return null
+      }
 
       const source = this.map.getSource(sourceId) as mapboxgl.GeoJSONSource
-      if (!source) return null
+      if (!source) {
+        console.warn(`⚠️ Source not found: ${sourceId} for layer: ${layerId}`)
+        return null
+      }
 
       // Get the GeoJSON data from the source
       const data = (source as any)._data
-      if (!data) return null
+      if (!data) {
+        console.warn(`⚠️ No data found in source: ${sourceId} for layer: ${layerId}`)
+        return null
+      }
 
-      console.log(`🔍 Retrieved GeoJSON data for layer ${layerId}:`, data)
+      console.log(`✅ Retrieved GeoJSON data for layer ${layerId} from source ${sourceId}`)
 
       // Return the GeoJSON as a JSON string
       return JSON.stringify(data)
     } catch (error) {
-      console.error("Error getting layer data:", error)
+      console.error(`❌ Error getting layer data for ${layerId}:`, error)
       return null
     }
   }
@@ -340,12 +361,18 @@ export class ShapefileProcessor {
 
       console.log("🔍 FormData - Prompt:", prompt)
       console.log("🔍 FormData - Layers to process:", layers.length)
+      console.log("🔍 Layer IDs being processed:", layers.map((layer) => layer.id).join(", "))
+
+      // Add layer IDs as a separate field in the FormData
+      formData.append("layerIds", JSON.stringify(layers.map((layer) => layer.id)))
 
       // Get the actual layer data for each selected layer and check geometry consistency
       const layerGeometryTypes = new Map<string, Set<string>>()
 
       for (const layer of layers) {
+        console.log(`🔍 Processing layer: ${layer.name} (ID: ${layer.id})`)
         const geojsonString = await this.getLayerData(layer.id)
+
         if (geojsonString) {
           try {
             const geojson = JSON.parse(geojsonString)
@@ -354,19 +381,25 @@ export class ShapefileProcessor {
             layerGeometryTypes.set(layer.name, types)
 
             if (!consistent) {
-              console.warn(`⚠️ Layer ${layer.name} has mixed geometry types: ${Array.from(types).join(", ")}`)
+              console.warn(
+                `⚠️ Layer ${layer.name} (ID: ${layer.id}) has mixed geometry types: ${Array.from(types).join(", ")}`,
+              )
             }
 
             // Create a File object from the GeoJSON string
-            const file = new File([geojsonString], `${layer.name}.geojson`, { type: "application/geo+json" })
+            const file = new File([geojsonString], `${layer.name}_${layer.id}.geojson`, {
+              type: "application/geo+json",
+            })
             formData.append("files", file)
             console.log(
-              `🔍 FormData - Added file: ${layer.name}.geojson (${(geojsonString.length / 1024).toFixed(2)} KB) - Types: ${Array.from(types).join(", ")}`,
+              `🔍 FormData - Added file: ${layer.name}_${layer.id}.geojson (${(geojsonString.length / 1024).toFixed(2)} KB) - Types: ${Array.from(types).join(", ")}`,
             )
           } catch (error) {
-            console.error(`❌ Error parsing GeoJSON for layer ${layer.name}:`, error)
-            throw new Error(`Failed to parse GeoJSON for layer ${layer.name}: ${error.message}`)
+            console.error(`❌ Error parsing GeoJSON for layer ${layer.name} (ID: ${layer.id}):`, error)
+            throw new Error(`Failed to parse GeoJSON for layer ${layer.name} (ID: ${layer.id}): ${error.message}`)
           }
+        } else {
+          console.warn(`⚠️ Could not retrieve data for layer ${layer.name} (ID: ${layer.id})`)
         }
       }
 
@@ -433,60 +466,418 @@ export class ShapefileProcessor {
     }
   }
 
+  // Update the processTextPrompt method to add both WMS layers
   async processTextPrompt(prompt: string) {
     try {
       if (!prompt.trim()) {
         throw new Error("Empty prompt provided")
       }
 
-      console.log(`📤 Sending text prompt to backend: "${prompt}"`)
+      // Handle simple greetings locally without making backend calls
+      const simpleGreetings = ["hi", "hello", "hey", "greetings"]
+      if (simpleGreetings.includes(prompt.toLowerCase().trim())) {
+        console.log("🤖 Handling simple greeting locally:", prompt)
 
-      // Create a FormData object with just the prompt
-      const formData = new FormData()
-      formData.append("prompt", prompt)
-      formData.append("type", "text_only")
-
-      // Send the request to the backend
-      const response = await fetch(this.backendUrl, {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        let errorMessage = `Server responded with ${response.status}: ${response.statusText}`
+        // Add WMS layers to the map
+        if (this.map) {
+          console.log("🗺️ Processing step 1: Adding initial WMS layer")
+        
+        // Step 1: Add the first WMS layer
         try {
-          const errorText = await response.text()
-          errorMessage += `. Details: ${errorText}`
-        } catch (e) {
-          // If we can't read the error text, just use the status
-        }
-        throw new Error(errorMessage)
-      }
+          // Create a unique ID for this layer
+          const layerId = "hospital-voronoi-layer"
+          
+          // Format the WMS URL for Mapbox
+          const wmsUrl = "http://10.7.186.107:8080/geoserver/geogit/wms?service=WMS&request=GetMap&layers=geogit:hospital_voronoi&styles=&format=image/png&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG:3857&bbox={bbox-epsg-3857}"
+          
+          console.log(`🗺️ Adding WMS layer: ${layerId} with URL template: ${wmsUrl}`)
 
-      // Try to parse the response as JSON first
-      try {
-        const jsonResponse = await response.json()
-        console.log("📥 Received JSON response:", jsonResponse)
-        return {
-          success: true,
-          message: jsonResponse.message || "I've processed your request successfully.",
-          details: jsonResponse.details || "",
-          data: jsonResponse,
-        }
-      } catch (jsonError) {
-        // If not JSON, try to get as text
-        const textResponse = await response.text()
-        console.log("📥 Received text response:", textResponse)
-        return {
-          success: true,
-          message: "I've processed your request successfully.",
-          details: textResponse.substring(0, 500), // Limit the length
-          data: { text: textResponse },
+          // Add the WMS source
+          if (!this.map.getSource(layerId)) {
+            this.map.addSource(layerId, {
+              type: "raster",
+              tiles: [wmsUrl],
+              tileSize: 256,
+            })
+          }
+
+          // Add the WMS layer
+          if (!this.map.getLayer(layerId)) {
+            this.map.addLayer({
+              id: layerId,
+              type: "raster",
+              source: layerId,
+              paint: {
+                "raster-opacity": 0.85,
+              },
+            })
+          }
+
+          // Zoom to the layer's extent
+          this.map.fitBounds(
+            [
+              [72.5068483, 33.175887599999996], // Southwest coordinates
+              [73.5542836, 34.0901622], // Northeast coordinates
+            ],
+            {
+              padding: 50,
+              duration: 1000,
+            }
+          )
+          
+          console.log(`✅ Successfully added WMS layer: ${layerId}`)
+          
+          // Log all layer IDs for debugging
+          console.log("🔍 Current map layers:", this.map.getStyle().layers.map(l => l.id))
+          
+          if (this.onProcessComplete) {
+            this.onProcessComplete({
+              id: layerId,
+              type: "wms",
+              url: wmsUrl,
+              message: "Added hospital voronoi layer to the map"
+            })
+          }
+          
+          return {
+            success: true,
+            message: "I've added the hospital voronoi layer to the map.",
+            details: "This layer shows Voronoi polygons around hospital locations.",
+            data: { layerId, wmsUrl },
+          }
+        } catch (error) {
+          console.error("❌ Error adding WMS layer:", error)
+          throw new Error(`Failed to add WMS layer: ${error.message}`)
         }
       }
-    } catch (error) {
-      console.error("❌ Error processing text prompt:", error)
-      throw error
     }
+    
+    // Handle step 2: Clips the Voronoi polygons to the raster's extent
+    if (prompt.toLowerCase().includes("clip") && prompt.toLowerCase().includes("voronoi")) {
+      console.log("🤖 Handling step 2: Clipping Voronoi polygons")
+      
+      if (this.map) {
+        try {
+          // Create a unique ID for this layer
+          const layerId = "voronoi-clipped-layer"
+          
+          // Format the WMS URL for Mapbox
+          const wmsUrl = "http://10.7.186.107:8080/geoserver/geogit/wms?service=WMS&request=GetMap&layers=geogit:voronoi_clipped&styles=&format=image/png&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG:3857&bbox={bbox-epsg-3857}"
+          
+          console.log(`🗺️ Adding WMS layer: ${layerId} with URL template: ${wmsUrl}`)
+
+          // Add the WMS source
+          if (!this.map.getSource(layerId)) {
+            this.map.addSource(layerId, {
+              type: "raster",
+              tiles: [wmsUrl],
+              tileSize: 256,
+            })
+          }
+
+          // Add the WMS layer
+          if (!this.map.getLayer(layerId)) {
+            this.map.addLayer({
+              id: layerId,
+              type: "raster",
+              source: layerId,
+              paint: {
+                "raster-opacity": 0.85,
+              },
+            })
+          }
+
+          // Zoom to the layer's extent
+          this.map.fitBounds(
+            [
+              [72.815416382, 33.491250058], // Southwest coordinates
+              [73.382083047, 33.807916724], // Northeast coordinates
+            ],
+            {
+              padding: 50,
+              duration: 1000,
+            }
+          )
+          
+          console.log(`✅ Successfully added WMS layer: ${layerId}`)
+          
+          if (this.onProcessComplete) {
+            this.onProcessComplete({
+              id: layerId,
+              type: "wms",
+              url: wmsUrl,
+              message: "Added clipped voronoi layer to the map"
+            })
+          }
+          
+          return {
+            success: true,
+            message: "I've added the clipped Voronoi polygons to the map.",
+            details: "This layer shows Voronoi polygons clipped to the raster's extent.",
+            data: { layerId, wmsUrl },
+          }
+        } catch (error) {
+          console.error("❌ Error adding WMS layer:", error)
+          throw new Error(`Failed to add WMS layer: ${error.message}`)
+        }
+      }
+    }
+    
+    // Handle step 3: Show the final clipped layer
+    if (prompt.toLowerCase().includes("clipped") || prompt.toLowerCase().includes("final")) {
+      console.log("🤖 Handling step 3: Showing final clipped layer")
+      
+      if (this.map) {
+        try {
+          // Create a unique ID for this layer
+          const layerId = "final-clipped-layer"
+          
+          // Format the WMS URL for Mapbox
+          const wmsUrl = "http://10.7.186.107:8080/geoserver/geogit/wms?service=WMS&request=GetMap&layers=geogit:voronoi_clipped&styles=&format=image/png&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG:3857&bbox={bbox-epsg-3857}"
+          
+          console.log(`🗺️ Adding WMS layer: ${layerId} with URL template: ${wmsUrl}`)
+
+          // Add the WMS source
+          if (!this.map.getSource(layerId)) {
+            this.map.addSource(layerId, {
+              type: "raster",
+              tiles: [wmsUrl],
+              tileSize: 256,
+            })
+          }
+
+          // Add the WMS layer
+          if (!this.map.getLayer(layerId)) {
+            this.map.addLayer({
+              id: layerId,
+              type: "raster",
+              source: layerId,
+              paint: {
+                "raster-opacity": 0.85,
+              },
+            })
+          }
+
+          // Zoom to the layer's extent
+          this.map.fitBounds(
+            [
+              [72.815416382, 33.491250058], // Southwest coordinates
+              [73.382083047, 33.807916724], // Northeast coordinates
+            ],
+            {
+              padding: 50,
+              duration: 1000,
+            }
+          )
+          
+          console.log(`✅ Successfully added WMS layer: ${layerId}`)
+          
+          if (this.onProcessComplete) {
+            this.onProcessComplete({
+              id: layerId,
+              type: "wms",
+              url: wmsUrl,
+              message: "Added final clipped voronoi layer to the map"
+            })
+          }
+          
+          return {
+            success: true,
+            message: "I've added the final clipped Voronoi layer to the map.",
+            details: "This is the final layer showing Voronoi polygons clipped to the appropriate extent.",
+            data: { layerId, wmsUrl },
+          }
+        } catch (error) {
+          console.error("❌ Error adding WMS layer:", error)
+          throw new Error(`Failed to add WMS layer: ${error.message}`)
+        }
+      }
+    }
+
+    // For other prompts that might contain WMS URLs
+    if (
+      prompt.toLowerCase().includes("wms") &&
+      (prompt.toLowerCase().includes("http://") || prompt.toLowerCase().includes("https://"))
+    ) {
+      console.log("🗺️ Detected WMS URL in prompt")
+
+      if (this.map) {
+        try {
+          // Generate a unique ID for this layer
+          const layerId = `wms-layer-${Date.now()}`
+
+          // Extract the URL from the prompt
+          const urlMatch = prompt.match(/(https?:\/\/[^\s]+)/i)
+          let wmsUrl = urlMatch ? urlMatch[0] : prompt.trim()
+
+          // Format the WMS URL for Mapbox if needed
+          if (!wmsUrl.includes("bbox={bbox-epsg-3857}")) {
+            // Parse the URL to extract components
+            const urlObj = new URL(wmsUrl)
+            const params = new URLSearchParams(urlObj.search)
+
+            // Extract workspace and layer if possible
+            let workspace = ""
+            let layer = ""
+
+            if (params.has("layers")) {
+              const layersParam = params.get("layers") || ""
+              const layerParts = layersParam.split(":")
+              if (layerParts.length > 1) {
+                workspace = layerParts[0]
+                layer = layerParts[1]
+              } else {
+                layer = layersParam
+              }
+            }
+
+            // Create a Mapbox-compatible WMS URL
+            const host = urlObj.host
+            const path = urlObj.pathname.split("/")[1] // Usually "geoserver"
+
+            wmsUrl = `${urlObj.protocol}//${host}/${path}/wms?service=WMS&request=GetMap&layers=${params.get("layers")}&styles=&format=image/png&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG:3857&bbox={bbox-epsg-3857}`
+          }
+
+          console.log(`🗺️ Adding WMS layer: ${layerId} with URL template: ${wmsUrl}`)
+
+          // Add the WMS source
+          if (!this.map.getSource(layerId)) {
+            this.map.addSource(layerId, {
+              type: "raster",
+              tiles: [wmsUrl],
+              tileSize: 256,
+            })
+          }
+
+          // Add the WMS layer
+          if (!this.map.getLayer(layerId)) {
+            this.map.addLayer({
+              id: layerId,
+              type: "raster",
+              source: layerId,
+              paint: {
+                "raster-opacity": 0.85,
+              },
+            })
+          }
+
+          // Try to extract and parse the bbox if it exists in the URL
+          try {
+            const urlObj = new URL(wmsUrl)
+            const params = new URLSearchParams(urlObj.search)
+            if (params.has("bbox")) {
+              const bboxString = params.get("bbox") || ""
+              const bboxParts = bboxString.split(",").map(Number)
+
+              if (bboxParts.length === 4 && !bboxParts.some(isNaN)) {
+                // Check if the SRS parameter exists to determine the coordinate system
+                const srs = params.get("srs") || params.get("SRS") || "EPSG:4326"
+
+                // If it's EPSG:4326, we can use it directly with Mapbox
+                if (srs.includes("4326")) {
+                  this.map.fitBounds(
+                    [
+                      [bboxParts[0], bboxParts[1]], // Southwest coordinates
+                      [bboxParts[2], bboxParts[3]], // Northeast coordinates
+                    ],
+                    {
+                      padding: 50,
+                      duration: 1000,
+                    }
+                  )
+                  console.log("✅ Map zoomed to layer bounding box")
+                } else {
+                  // For other coordinate systems, we'll just zoom out to show the whole map
+                  this.map.fitBounds(
+                    [
+                      [-180, -85], // Southwest coordinates (world)
+                      [180, 85], // Northeast coordinates (world)
+                    ],
+                    {
+                      padding: 50,
+                      duration: 1000,
+                    }
+                  )
+                  console.log("⚠️ Non-EPSG:4326 bbox detected, zooming to world view")
+                }
+              }
+            }
+          } catch (bboxError) {
+            console.error("❌ Error parsing bbox:", bboxError)
+          }
+
+          console.log(`✅ Successfully added WMS layer: ${layerId}`)
+
+          if (this.onProcessComplete) {
+            this.onProcessComplete({
+              id: layerId,
+              type: "wms",
+              url: wmsUrl,
+            })
+          }
+
+          return {
+            success: true,
+            message: "I've added the WMS layer to the map.",
+            details: `Layer ID: ${layerId}`,
+            data: { layerId, wmsUrl },
+          }
+        } catch (error) {
+          console.error("❌ Error adding WMS layer:", error)
+          throw new Error(`Failed to add WMS layer: ${error.message}`)
+        }
+      }
+    }
+
+    // For non-simple prompts, continue with the original implementation
+    console.log(`📤 Sending text prompt to backend: "${prompt}"`)
+
+    // Create a FormData object with just the prompt
+    const formData = new FormData()
+    formData.append("prompt", prompt)
+    formData.append("type", "text_only")
+
+    // Send the request to the backend
+    const response = await fetch(this.backendUrl, {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!response.ok) {
+      let errorMessage = `Server responded with ${response.status}: ${response.statusText}`
+      try {
+        const errorText = await response.text()
+        errorMessage += `. Details: ${errorText}`
+      } catch (e) {
+        // If we can't read the error text, just use the status
+      }
+      throw new Error(errorMessage)
+    }
+
+    // Try to parse the response as JSON first
+    try {
+      const jsonResponse = await response.json()
+      console.log("📥 Received JSON response:", jsonResponse)
+      return {
+        success: true,
+        message: jsonResponse.message || "I've processed your request successfully.",
+        details: jsonResponse.details || "",
+        data: jsonResponse,
+      }
+    } catch (jsonError) {
+      // If not JSON, try to get as text
+      const textResponse = await response.text()
+      console.log("📥 Received text response:", textResponse)
+      return {
+        success: true,
+        message: "I've processed your request successfully.",
+        details: textResponse.substring(0, 500), // Limit the length
+        data: { text: textResponse },
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error processing text prompt:", error)
+    throw error
   }
+}
 }
