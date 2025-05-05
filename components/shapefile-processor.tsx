@@ -394,12 +394,16 @@ const dataset = {
   async processLayers(layers: Array<{ id: string; name: string }>, prompt: string) {
     try {
 
+console.log(layers);
+
       const formData = new FormData()
       formData.append("prompt", prompt);
       formData.append("type", "vector");
       formData.append("project_id", this.projectId);
      
-
+ // Separate raster and vector layers
+        const vectorLayers = layers.filter(layer => layer.type === "vector");
+        const rasterLayers = layers.filter(layer => layer.type === "raster");
 
 
  
@@ -410,23 +414,28 @@ const dataset = {
       // Get the actual layer data for each selected layer and check geometry consistency
       const layerGeometryTypes = new Map<string, Set<string>>()
 
-      for (const layer of layers) {
-  const geojsonString = await this.getLayerData(layer.id);
-  if (geojsonString) {
-    try {
-      const geojson = JSON.parse(geojsonString);
-      const file = new File([geojsonString], `${layer.name}.geojson`, { 
-        type: "application/geo+json" 
-      });
-      
-      // Key change: Use "files[]" for array support
-      formData.append("files[]", file); // Note the [] for array format
-    } catch (error) {
-      console.error(`Error processing layer ${layer.name}:`, error);
-      throw error;
-    }
-  }
-}
+    for (const layer of vectorLayers) {
+            const geojsonString = await this.getLayerData(layer.id);
+            if (geojsonString) {
+                try {
+                    const file = new File([geojsonString], `${layer.name}.geojson`, {
+                        type: "application/geo+json"
+                    });
+                    formData.append("files[]", file);
+                } catch (error) {
+                    console.error(`Error processing vector layer ${layer.name}:`, error);
+                    throw error;
+                }
+            }
+        }
+
+if (rasterLayers.length > 0) {
+            if (rasterLayers.length > 1) {
+                console.warn("Multiple raster layers selected - using first one only");
+            }
+            const rasterLayer = rasterLayers[0];
+            formData.append("raster_id", rasterLayer.id);  // Send raster_id instead of file
+        }
 
       // Check if we have mixed geometry types across layers
       const allTypes = new Set<string>()
