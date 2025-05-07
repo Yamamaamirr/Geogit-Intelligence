@@ -26,16 +26,13 @@ interface LlmAssistantProps {
   }>
   map?: mapboxgl.Map | null
   projectId: string
+  messages: Array<{ role: string; content: string }>
+  setMessages: React.Dispatch<React.SetStateAction<Array<{ role: string; content: string }>>>
  onAddDataset: (dataset: any) => void
 }
 
-export function LlmAssistant({ projectName = "", datasets = [], map = null,projectId,onAddDataset }: LlmAssistantProps) {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today? Type @ to select layers for processing.`,
-    },
-  ])
+export function LlmAssistant({ projectName = "", datasets = [], map = null,projectId,onAddDataset, messages,setMessages }: LlmAssistantProps) {
+
   const [input, setInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showLayerSelector, setShowLayerSelector] = useState(false)
@@ -235,23 +232,13 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
               </div>
             ))}
 
-            {isUploading && (
+            {/* Loading indicator inside chat */}
+            {isProcessing && (
               <div className="flex justify-start">
                 <div className="max-w-[85%] rounded-lg p-2.5 bg-gradient-to-br from-[#2A2A32] to-[#2D2D38] text-white shadow-md">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <FileUp className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
-                      <span className="text-xs">Uploading selected layers...</span>
-                    </div>
-                    <div className="w-full bg-zinc-800 rounded-full h-1">
-                      <div
-                        className="bg-blue-500 h-1 rounded-full transition-all duration-300"
-                        style={{ width: `${uploadProgress}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-[10px] text-zinc-400">
-                      {uploadProgress < 100 ? "Preparing data..." : "Processing..."}
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <LoadingIndicator isVisible={isProcessing} />
+                    <p className="text-xs text-blue-400">Processing...</p>
                   </div>
                 </div>
               </div>
@@ -261,34 +248,6 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
           </div>
         </ScrollArea>
       </div>
-
-      {/* Loading Indicator */}
-      <LoadingIndicator isVisible={isProcessing} />
-
-      {messages.length > 1 &&
-        messages[messages.length - 2].role === "user" &&
-        messages[messages.length - 1].role === "assistant" &&
-        !isProcessing && (
-          <div className="border-t border-border p-2">
-            <div className="flex justify-center gap-2">
-              <Button
-                size="sm"
-                className="h-7 px-3 bg-zinc-800 text-xs text-zinc-300 hover:bg-zinc-700 border border-zinc-700 shadow-md"
-              >
-                <Check className="mr-1.5 h-3.5 w-3.5 text-blue-500" />
-                Accept
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-3 bg-black border-zinc-800 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-300 shadow-md"
-              >
-                <X className="mr-1.5 h-3.5 w-3.5 text-zinc-500" />
-                Reject
-              </Button>
-            </div>
-          </div>
-        )}
 
       {/* Selected layers display */}
       {selectedLayers.length > 0 && (
@@ -328,11 +287,7 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
             onClick={handleSend}
             disabled={isProcessing || isUploading}
           >
-            {isUploading || isProcessing ? (
-              <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5 text-blue-400" />
-            )}
+            <Send className="h-3.5 w-3.5 text-blue-400" />
           </Button>
         </div>
 

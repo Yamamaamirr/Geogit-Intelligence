@@ -48,7 +48,12 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
   const [projectData, setProjectData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showAddDatasetDialog, setShowAddDatasetDialog] = useState(false)
-
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today? Type @ to select layers for processing.`,
+    },
+  ])
   // Debug log to verify props are received correctly
   useEffect(() => {
     console.log("MapWorkspace received props:", { projectId, projectName, projectDescription })
@@ -825,6 +830,8 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                     map={mapInstanceRef.current}
                     projectId={projectData.id}
                     onAddDataset={handleAddDataset}
+                    messages={messages}
+                    setMessages={setMessages}
                   />
                 </TabsContent>
                 <TabsContent value="datasets" className="h-[calc(100%-41px)] p-0">
