@@ -75,7 +75,7 @@ export function DatasetInspector({ datasets = [], map = null }: DatasetInspector
     setExpandedDataset(expandedDataset === id ? null : id)
   }
 
-  // Update the toggleVisibility function to handle layer visibility more robustly
+  // Enhance the toggleVisibility function to better handle different layer types and naming patterns
   const toggleVisibility = (id: string) => {
     // Update local state first
     setDatasetList(
@@ -85,15 +85,37 @@ export function DatasetInspector({ datasets = [], map = null }: DatasetInspector
     // Only attempt to update map if it exists and is loaded
     if (map && map.loaded()) {
       try {
-        // Check if the layer exists before trying to modify it
-        // In a real app, you would have a mapping between dataset IDs and actual map layer IDs
-        // For now, we'll just use the dataset ID as the layer ID for simplicity
-        if (map.getLayer(id)) {
-          const currentVisibility = datasetList.find((d) => d.id === id)?.visible
-          const newVisibility = currentVisibility ? "none" : "visible"
-          map.setLayoutProperty(id, "visibility", newVisibility)
-        } else {
-          console.log(`Layer ${id} does not exist in the current map style`)
+        const currentVisibility = datasetList.find((d) => d.id === id)?.visible
+        const newVisibility = currentVisibility ? "none" : "visible"
+
+        // Get the dataset to determine its type
+        const dataset = datasetList.find((d) => d.id === id)
+        const isRaster = dataset?.type === "raster"
+
+        // List of possible layer IDs to check
+        const possibleLayerIds = [
+          id, // Direct ID match
+          `${id}-lines`, // Vector lines layer
+          `${id}-points`, // Vector points layer
+          `layer-${id}`, // Alternative layer naming
+          `raster-layer-${id}`, // Legacy raster layer naming
+        ]
+
+        // Track if we found any layers to update
+        let foundLayers = false
+
+        // Try to update each possible layer
+        possibleLayerIds.forEach((layerId) => {
+          if (map.getLayer(layerId)) {
+            map.setLayoutProperty(layerId, "visibility", newVisibility)
+            console.log(`Set visibility of layer ${layerId} to ${newVisibility}`)
+            foundLayers = true
+          }
+        })
+
+        // If no layers were found, log and trigger update
+        if (!foundLayers) {
+          console.log(`No layers found for dataset ${id}. Possible layer IDs checked:`, possibleLayerIds)
 
           // If the layer doesn't exist, it might have been removed during a style change
           // We should trigger the parent component to re-add it

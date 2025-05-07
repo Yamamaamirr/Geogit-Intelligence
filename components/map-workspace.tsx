@@ -478,131 +478,136 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
         const currentMap = mapInstanceRef.current
 
         // Handle different dataset types
-       if (newDataset.type === "vector" && newDataset.geometry_data) {
-  // Handle vector data
-  try {
-    // Create a unique source ID for this dataset
-    const sourceId = `source-${newDataset.id || Date.now()}`
-    const layerId = `layer-${newDataset.id || Date.now()}`
+        if (newDataset.type === "vector" && newDataset.geometry_data) {
+          // Handle vector data
+          try {
+            // Create a unique source ID for this dataset
+            const sourceId = `source-${newDataset.id || Date.now()}`
+            const layerId = newDataset.id || `layer-${Date.now()}`
 
-    // Make sure the map is fully loaded before adding layers
-    const addVectorLayerToMap = () => {
-      // Add the source if it doesn't exist
-      if (!currentMap.getSource(sourceId)) {
-        currentMap.addSource(sourceId, {
-          type: "geojson",
-          data: newDataset.geometry_data,
-        })
-      }
-
-      // Add a single layer that handles all geometry types
-      if (!currentMap.getLayer(layerId)) {
-        currentMap.addLayer({
-          id: layerId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": "#3b82f6",
-            "fill-opacity": 0.6,
-            "fill-outline-color": "#2563eb",
-          },
-          filter: ["==", "$type", "Polygon"]
-        });
-
-        // Add a line layer that will handle both LineString and Polygon outlines
-        currentMap.addLayer({
-          id: `${layerId}-lines`,
-          type: "line",
-          source: sourceId,
-          paint: {
-            "line-color": "#3b82f6",
-            "line-width": 2,
-          },
-          filter: ["any", 
-            ["==", "$type", "LineString"],
-            ["==", "$type", "Polygon"]
-          ]
-        });
-
-        // Add a point layer
-        currentMap.addLayer({
-          id: `${layerId}-points`,
-          type: "circle",
-          source: sourceId,
-          paint: {
-            "circle-radius": 6,
-            "circle-color": "#3b82f6",
-            "circle-stroke-width": 1,
-            "circle-stroke-color": "#2563eb",
-          },
-          filter: ["==", "$type", "Point"]
-        });
-      }
-
-      // Calculate bounds of the geometry data (same as before)
-      if (newDataset.geometry_data.features.length > 0) {
-        const bounds = new mapboxgl.LngLatBounds()
-        let hasBounds = false
-
-        newDataset.geometry_data.features.forEach((feature: any) => {
-          if (feature.geometry) {
-            try {
-              if (feature.geometry.type === "Point") {
-                bounds.extend(feature.geometry.coordinates)
-                hasBounds = true
-              } else if (feature.geometry.type === "LineString") {
-                feature.geometry.coordinates.forEach((coord: [number, number]) => {
-                  bounds.extend(coord)
-                  hasBounds = true
+            // Make sure the map is fully loaded before adding layers
+            const addVectorLayerToMap = () => {
+              // Add the source if it doesn't exist
+              if (!currentMap.getSource(sourceId)) {
+                currentMap.addSource(sourceId, {
+                  type: "geojson",
+                  data: newDataset.geometry_data,
                 })
-              } else if (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon") {
-                const processCoords = (coords: any[]) => {
-                  coords.forEach((coord: any) => {
-                    if (Array.isArray(coord[0])) {
-                      processCoords(coord)
-                    } else {
-                      bounds.extend(coord as [number, number])
-                      hasBounds = true
+              }
+
+              // Add a single layer that handles all geometry types
+              if (!currentMap.getLayer(layerId)) {
+                currentMap.addLayer({
+                  id: layerId,
+                  type: "fill",
+                  source: sourceId,
+                  paint: {
+                    "fill-color": "#3b82f6",
+                    "fill-opacity": 0.6,
+                    "fill-outline-color": "#2563eb",
+                  },
+                  layout: {
+                    visibility: "visible", // Explicitly set initial visibility
+                  },
+                  filter: ["==", "$type", "Polygon"],
+                })
+
+                // Add a line layer that will handle both LineString and Polygon outlines
+                currentMap.addLayer({
+                  id: `${layerId}-lines`,
+                  type: "line",
+                  source: sourceId,
+                  paint: {
+                    "line-color": "#3b82f6",
+                    "line-width": 2,
+                  },
+                  layout: {
+                    visibility: "visible", // Explicitly set initial visibility
+                  },
+                  filter: ["any", ["==", "$type", "LineString"], ["==", "$type", "Polygon"]],
+                })
+
+                // Add a point layer
+                currentMap.addLayer({
+                  id: `${layerId}-points`,
+                  type: "circle",
+                  source: sourceId,
+                  paint: {
+                    "circle-radius": 6,
+                    "circle-color": "#3b82f6",
+                    "circle-stroke-width": 1,
+                    "circle-stroke-color": "#2563eb",
+                  },
+                  layout: {
+                    visibility: "visible", // Explicitly set initial visibility
+                  },
+                  filter: ["==", "$type", "Point"],
+                })
+              }
+
+              // Calculate bounds of the geometry data (same as before)
+              if (newDataset.geometry_data.features.length > 0) {
+                const bounds = new mapboxgl.LngLatBounds()
+                let hasBounds = false
+
+                newDataset.geometry_data.features.forEach((feature: any) => {
+                  if (feature.geometry) {
+                    try {
+                      if (feature.geometry.type === "Point") {
+                        bounds.extend(feature.geometry.coordinates)
+                        hasBounds = true
+                      } else if (feature.geometry.type === "LineString") {
+                        feature.geometry.coordinates.forEach((coord: [number, number]) => {
+                          bounds.extend(coord)
+                          hasBounds = true
+                        })
+                      } else if (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon") {
+                        const processCoords = (coords: any[]) => {
+                          coords.forEach((coord: any) => {
+                            if (Array.isArray(coord[0])) {
+                              processCoords(coord)
+                            } else {
+                              bounds.extend(coord as [number, number])
+                              hasBounds = true
+                            }
+                          })
+                        }
+                        processCoords(feature.geometry.coordinates)
+                      }
+                    } catch (error) {
+                      console.warn(`Error processing feature geometry: ${error}`)
                     }
+                  }
+                })
+
+                if (hasBounds && !bounds.isEmpty()) {
+                  currentMap.fitBounds(bounds, {
+                    padding: 50,
+                    duration: 1000,
+                    maxZoom: 15,
                   })
                 }
-                processCoords(feature.geometry.coordinates)
               }
-            } catch (error) {
-              console.warn(`Error processing feature geometry: ${error}`)
+
+              console.log(
+                `Added ${newDataset.features_count || newDataset.geometry_data.features.length} vector features to the map`,
+              )
             }
+
+            if (currentMap.isStyleLoaded()) {
+              addVectorLayerToMap()
+            } else {
+              currentMap.once("style.load", addVectorLayerToMap)
+            }
+          } catch (error) {
+            console.error("Error adding vector data to map:", error)
           }
-        })
-
-        if (hasBounds && !bounds.isEmpty()) {
-          currentMap.fitBounds(bounds, {
-            padding: 50,
-            duration: 1000,
-            maxZoom: 15,
-          })
-        }
-      }
-
-      console.log(
-        `Added ${newDataset.features_count || newDataset.geometry_data.features.length} vector features to the map`,
-      )
-    }
-
-    if (currentMap.isStyleLoaded()) {
-      addVectorLayerToMap()
-    } else {
-      currentMap.once("style.load", addVectorLayerToMap)
-    }
-  } catch (error) {
-    console.error("Error adding vector data to map:", error)
-  }
-}
- else if (newDataset.type === "raster" && newDataset.mapbox_url) {
+        } else if (newDataset.type === "raster" && newDataset.mapbox_url) {
           // Handle raster data with mapbox_url
           try {
             // Create a unique source ID for this dataset
-            const sourceId = `raster-source-${newDataset.id || Date.now()}`
-            const layerId = `raster-layer-${newDataset.id || Date.now()}`
+            const sourceId = `source-${newDataset.id || Date.now()}`
+            const layerId = newDataset.id || `layer-${Date.now()}`
 
             // Make sure the map is fully loaded before adding layers
             const addRasterLayerToMap = () => {
@@ -625,6 +630,9 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                     paint: {
                       "raster-opacity": 0.8,
                       "raster-fade-duration": 300,
+                    },
+                    layout: {
+                      visibility: "visible", // Explicitly set initial visibility
                     },
                   })
                 } catch (error) {
@@ -655,7 +663,7 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
               }
 
               // Show a success notification or feedback
-              console.log(`Added raster layer to the map: ${newDataset.name}`)
+              console.log(`Added raster layer to the map: ${newDataset.name} with ID: ${layerId}`)
             }
 
             // Check if the map is loaded and has a style
@@ -817,7 +825,6 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                     map={mapInstanceRef.current}
                     projectId={projectData.id}
                     onAddDataset={handleAddDataset}
-
                   />
                 </TabsContent>
                 <TabsContent value="datasets" className="h-[calc(100%-41px)] p-0">
