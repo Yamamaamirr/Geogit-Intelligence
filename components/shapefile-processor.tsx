@@ -364,6 +364,7 @@ const dataset = {
   }
 
   async getLayerData(layerId: string): Promise<string | null> {
+
     if (!this.map) return null
 
     try {
@@ -396,77 +397,27 @@ console.log(layer);
   async processLayers(layers: Array<{ id: string; name: string; type: string; format?: string }>, prompt: string) {
     try {
 
-console.log(layers);
+ const file_inputs = layers.map(layer => ({
+      id: layer.id,
+      type: layer.type  // "vector" or "raster"
+    }));
 
-      const formData = new FormData()
-      formData.append("prompt", prompt);
-      formData.append("type", "vector");
-      formData.append("project_id", this.projectId);
-     
- // Separate raster and vector layers
-        const vectorLayers = layers.filter(layer => layer.type === "vector");
-        const rasterLayers = layers.filter(layer => layer.type === "raster");
+    // Construct the JSON payload
+    const payload = {
+      project_id: this.projectId,
+      file_inputs,
+      prompt
+    };
 
+    console.log("📤 Payload to send:", payload);
 
- 
-
-      console.log("🔍 FormData - Prompt:", prompt)
-      console.log("🔍 FormData - Layers to process:", layers.length)
-
-      // Get the actual layer data for each selected layer and check geometry consistency
-      const layerGeometryTypes = new Map<string, Set<string>>()
-
-    for (const layer of vectorLayers) {
-            const geojsonString = await this.getLayerData(layer.id);
-            if (geojsonString) {
-                try {
-                    const file = new File([geojsonString], `${layer.name}.geojson`, {
-                        type: "application/geo+json"
-                    });
-                    formData.append("files[]", file);
-                } catch (error) {
-                    console.error(`Error processing vector layer ${layer.name}:`, error);
-                    throw error;
-                }
-            }
-        }
-
-if (rasterLayers.length > 0) {
-            if (rasterLayers.length > 1) {
-                console.warn("Multiple raster layers selected - using first one only");
-            }
-            const rasterLayer = rasterLayers[0];
-            formData.append("raster_id", rasterLayer.id);  // Send raster_id instead of file
-        }
-
-      // Check if we have mixed geometry types across layers
-      const allTypes = new Set<string>()
-      layerGeometryTypes.forEach((types) => {
-        types.forEach((type) => allTypes.add(type))
-      })
-
-      if (allTypes.size > 1) {
-        console.warn(`⚠️ Selected layers have mixed geometry types: ${Array.from(allTypes).join(", ")}`)
-        console.warn("⚠️ This might cause issues with the backend processing")
-      }
-
-      // Log all entries in the FormData (for debugging)
-      console.log("🔍 FormData - All entries:")
-      for (const pair of formData.entries()) {
-        if (pair[1] instanceof File) {
-          const file = pair[1] as File
-          console.log(`   ${pair[0]}: File - ${file.name}, ${file.size} bytes, ${file.type}`)
-        } else {
-          console.log(`   ${pair[0]}: ${pair[1]}`)
-        }
-      }
-
-      // Send the request to the backend
-      console.log(`📤 Sending request to backend at: ${this.backendUrl}`)
       const response = await fetch(this.backendUrl, {
-        method: "POST",
-        body: formData,
-      })
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
 
       if (!response.ok) {
         let errorMessage = `Server responded with ${response.status}: ${response.statusText}`
