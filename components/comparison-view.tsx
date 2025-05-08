@@ -16,9 +16,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 interface ComparisonViewProps {
   onClose: () => void
   projectData?: any
+  mainMap?: mapboxgl.Map | null
 }
 
-export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
+export function ComparisonView({ onClose, projectData, mainMap }: ComparisonViewProps) {
   const leftMapContainer = useRef<HTMLDivElement>(null)
   const rightMapContainer = useRef<HTMLDivElement>(null)
   const [leftMap, setLeftMap] = useState<mapboxgl.Map | null>(null)
@@ -26,46 +27,134 @@ export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
   const [syncMaps, setSyncMaps] = useState(true)
   const [showDiff, setShowDiff] = useState(false)
   const [splitPosition, setSplitPosition] = useState(50)
-  const [leftVersion, setLeftVersion] = useState("v1")
-  const [rightVersion, setRightVersion] = useState("v2")
   const [mapsInitialized, setMapsInitialized] = useState(false)
   const [sharedMapStyle, setSharedMapStyle] = useState<string>("mapbox://styles/mapbox/light-v11")
 
   // Sample version data - use project data if available
-  const versions = [
-    {
-      id: "v1",
-      name: "Current Version (Apr 2023)",
-      style: projectData?.mapData?.style || "mapbox://styles/mapbox/light-v11",
-      date: "Apr 30, 2023",
-      author: "Alex Kim",
-    },
-    {
-      id: "v2",
-      name: "Previous Version (Jan 2023)",
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
-      date: "Jan 15, 2023",
-      author: "Jamie Smith",
-    },
-    {
-      id: "v3",
-      name: "Initial Version (Oct 2022)",
-      style: "mapbox://styles/mapbox/streets-v12",
-      date: "Oct 10, 2022",
-      author: "Alex Kim",
-    },
-  ]
+  const versions =
+    projectData?.mapData?.commits?.length > 0
+      ? projectData.mapData.commits.map((commit: any) => ({
+          id: commit.id,
+          name: commit.message || `Commit ${commit.id}`,
+          style: projectData?.mapData?.style || "mapbox://styles/mapbox/light-v11",
+          date: commit.date || new Date(commit.timestamp).toLocaleDateString(),
+          author: commit.author || "Unknown",
+          timestamp: commit.timestamp,
+          layers: commit.layers || [],
+        }))
+      : [
+          {
+            id: "v1",
+            name: "Current Version (Apr 2023)",
+            style: projectData?.mapData?.style || "mapbox://styles/mapbox/light-v11",
+            date: "Apr 30, 2023",
+            author: "Alex Kim",
+            layers: [],
+          },
+          {
+            id: "v2",
+            name: "Previous Version (Jan 2023)",
+            style: "mapbox://styles/mapbox/satellite-streets-v12",
+            date: "Jan 15, 2023",
+            author: "Jamie Smith",
+            layers: [],
+          },
+          {
+            id: "v3",
+            name: "Initial Version (Oct 2022)",
+            style: "mapbox://styles/mapbox/streets-v12",
+            date: "Oct 10, 2022",
+            author: "Alex Kim",
+            layers: [],
+          },
+        ]
+
+  const [leftVersion, setLeftVersion] = useState(versions.length > 0 ? versions[0].id : "v1")
+  const [rightVersion, setRightVersion] = useState(versions.length > 1 ? versions[1].id : "v2")
 
   // Get style URL based on version ID
   const getStyleForVersion = (versionId: string) => {
-    // When using shared style, return that instead of version-specific styles
-    return sharedMapStyle
+    const version = versions.find((v) => v.id === versionId)
+    return version?.style || sharedMapStyle
+  }
+
+  // Get layers for a specific version
+  const getLayersForVersion = (versionId: string) => {
+    const version = versions.find((v) => v.id === versionId)
+    return version?.layers || []
   }
 
   const swapVersions = () => {
     const temp = leftVersion
     setLeftVersion(rightVersion)
     setRightVersion(temp)
+  }
+
+  // Apply version-specific layers to a map
+  const applyVersionLayers = (map: mapboxgl.Map, versionId: string) => {
+    if (!map || !map.loaded()) return
+
+    // Get layers for this version
+    const versionLayers = getLayersForVersion(versionId)
+    
+    // If we have the main map reference and it has layers, copy them
+    if (mainMap && versionLayers.length === 0) {
+      // Get all layers from the main map
+      const mainMapLayers = mainMap.getStyle().layers || []
+      const mainMapSources = mainMap.getStyle().sources || {}
+      
+      // Add sources from main map if they don't exist in the comparison map
+      Object.keys(mainMapSources).forEach(sourceId => {
+        if (!map.getSource(sourceId)) {
+          try {
+            map.addSource(sourceId, mainMapSources[sourceId])
+          } catch (error) {
+            console.warn(`Error adding source ${sourceId}:`, error)
+          }
+        }
+      })
+      
+      // Add layers from main map
+      mainMapLayers.forEach(layer => {
+        if (!map.getLayer(layer.id)) {
+          try {
+            map.addLayer(layer)
+          } catch (error) {
+            console.warn(`Error adding layer ${layer.id}:`, error)
+          }
+        }
+      })
+    } else if (versionLayers.length > 0) {
+      // Add version-specific layers
+      versionLayers.forEach(layer => {
+        // Check if the layer already exists
+        if (map.getLayer(layer.id)) {
+          map.removeLayer(layer.id)
+        }
+        
+        // Check if the source exists, if not add it
+        if (layer.source && !map.getSource(layer.source)) {
+          try {
+            map.addSource(layer.source, layer.sourceData || {
+              type: "geojson",
+              data: {
+                type: "FeatureCollection",
+                features: []
+              }
+            })
+          } catch (error) {
+            console.warn(`Error adding source ${layer.source}:`, error)
+          }
+        }
+        
+        // Add the layer
+        try {
+          map.addLayer(layer)
+        } catch (error) {
+          console.warn(`Error adding layer ${layer.id}:`, error)
+        }
+      })
+    }
   }
 
   // Initialize maps
@@ -121,6 +210,15 @@ export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
           }
         })
       }
+
+      // Apply version-specific layers when maps are loaded
+      newLeftMap.on("load", () => {
+        applyVersionLayers(newLeftMap, leftVersion)
+      })
+
+      newRightMap.on("load", () => {
+        applyVersionLayers(newRightMap, rightVersion)
+      })
 
       // Add diff visualization if enabled
       if (showDiff) {
@@ -277,6 +375,19 @@ export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
     }
   }
 
+  // Update version selections when projectData changes
+  useEffect(() => {
+    if (projectData?.mapData?.commits?.length > 0) {
+      const commits = projectData.mapData.commits
+      if (commits.length > 0) {
+        setLeftVersion(commits[0].id)
+      }
+      if (commits.length > 1) {
+        setRightVersion(commits[1].id)
+      }
+    }
+  }, [projectData])
+
   return (
     <div className="absolute inset-0 z-20 h-full w-full bg-[#1A1A1E]">
       {/* Header */}
@@ -306,16 +417,30 @@ export function ComparisonView({ onClose, projectData }: ComparisonViewProps) {
       {/* Version labels */}
       <div className="absolute left-0 top-12 z-30 flex h-10 w-full items-center border-b border-border bg-[#1A1A1E]/80 backdrop-blur-sm pointer-events-auto">
         <div className="flex h-full items-center border-r border-border px-4" style={{ width: `${splitPosition}%` }}>
-          <div className="flex items-center gap-2">
-            <GitCommit className="h-3.5 w-3.5 text-green-400" />
-            <span className="text-xs font-medium">{leftVersionDetails?.name}</span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <GitCommit className="h-3.5 w-3.5 text-green-400" />
+              <span className="text-xs font-medium">{leftVersionDetails?.name}</span>
+            </div>
+            {leftVersionDetails?.author && (
+              <span className="text-[10px] text-muted-foreground">
+                {leftVersionDetails.author} • {leftVersionDetails.date}
+              </span>
+            )}
           </div>
           <Badge className="ml-auto bg-green-500/20 text-[10px] text-green-400">Left</Badge>
         </div>
         <div className="flex h-full flex-1 items-center px-4">
-          <div className="flex items-center gap-2">
-            <GitCommit className="h-3.5 w-3.5 text-blue-400" />
-            <span className="text-xs font-medium">{rightVersionDetails?.name}</span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <GitCommit className="h-3.5 w-3.5 text-blue-400" />
+              <span className="text-xs font-medium">{rightVersionDetails?.name}</span>
+            </div>
+            {rightVersionDetails?.author && (
+              <span className="text-[10px] text-muted-foreground">
+                {rightVersionDetails.author} • {rightVersionDetails.date}
+              </span>
+            )}
           </div>
           <Badge className="ml-auto bg-blue-500/20 text-[10px] text-blue-400">Right</Badge>
         </div>

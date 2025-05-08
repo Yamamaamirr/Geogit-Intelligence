@@ -59,6 +59,7 @@ export function VersionControl({ onCompareVersions, commits = [] }: VersionContr
 
   const handleCompareSelected = () => {
     if (selectedCommits.length === 2 && onCompareVersions) {
+      // Pass the selected commit IDs to the parent component for comparison
       onCompareVersions(selectedCommits[0], selectedCommits[1])
     }
   }
@@ -80,7 +81,7 @@ export function VersionControl({ onCompareVersions, commits = [] }: VersionContr
 
   return (
     <TooltipProvider>
-      <div className="flex h-full flex-col">
+      <div className="flex h-[500px] flex-col">
         <div className="flex border-b border-border mt-2">
           <Button
             variant="ghost"
@@ -110,7 +111,7 @@ export function VersionControl({ onCompareVersions, commits = [] }: VersionContr
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 px-2 py-2">
+        <ScrollArea className="flex-1 px-2 py-2 h-full">
           {activeTab === "commits" && (
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-medium">History</span>

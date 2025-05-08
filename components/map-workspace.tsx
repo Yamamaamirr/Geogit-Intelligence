@@ -688,7 +688,46 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
     }
 
     setShowAddDatasetDialog(false)
+    updateCommits(projectId)
   }
+
+
+  async function updateCommits(projectId: string) {
+  const newCommits = await fetchCommits(projectId);
+
+  setProjectData(prev => ({
+    ...prev,
+    mapData: {
+      ...prev.mapData,
+      commits: newCommits,
+    },
+  }));
+}
+
+  async function fetchCommits(projectId: string) {
+  try {
+    const response = await fetch(`http://localhost:5000/versions/${projectId}`);
+    if (!response.ok) throw new Error("Failed to fetch commits");
+
+    const data = await response.json();
+
+    const commits = data.map((commit: any) => ({
+      id: commit.id,
+      message: commit.commit_message || "",
+      author: "", // Fill in if available
+      timestamp: commit.created_at,
+      date: new Date(commit.created_at).toLocaleDateString(),
+      isLlm: false, // Update if you have logic to determine this
+      isMerge: false, // Update if you have logic to determine this
+    }));
+
+    return commits;
+  } catch (error) {
+    console.error("Error fetching commits:", error);
+    return [];
+  }
+}
+
 
   if (isLoading) {
     return (
@@ -854,7 +893,15 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
         </div>
 
         {/* Comparison view */}
-        {showComparison && <ComparisonView onClose={toggleComparisonView} projectData={projectData} />}
+        {showComparison && (
+          <div className="absolute inset-0 z-50 bg-background">
+            <ComparisonView 
+              onClose={() => setShowComparison(false)} 
+              projectData={projectData}
+              mainMap={map}
+            />
+          </div>
+        )}
       </div>
 
       {/* Add Dataset Dialog */}
