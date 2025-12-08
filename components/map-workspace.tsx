@@ -483,8 +483,67 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
         const currentMap = mapInstanceRef.current
 
         // Handle different dataset types
-        if (newDataset.type === "vector" && newDataset.geometry_data) {
-          // Handle vector data
+        if (newDataset.type === "vector" && newDataset.mapbox_url) {
+          // Handle vector data served as WMS tiles from GeoServer
+          try {
+            const sourceId = `source-${newDataset.id || Date.now()}`
+            const layerId = newDataset.id || `layer-${Date.now()}`
+
+            const addVectorTileLayerToMap = () => {
+              // Add the WMS raster source if it doesn't exist
+              if (!currentMap.getSource(sourceId)) {
+                currentMap.addSource(sourceId, {
+                  type: "raster",
+                  tiles: [newDataset.mapbox_url],
+                  tileSize: 256,
+                })
+              }
+
+              // Add the raster layer (vector rendered as tiles)
+              if (!currentMap.getLayer(layerId)) {
+                currentMap.addLayer({
+                  id: layerId,
+                  type: "raster",
+                  source: sourceId,
+                  paint: {
+                    "raster-opacity": 0.85,
+                    "raster-fade-duration": 300,
+                  },
+                  layout: {
+                    visibility: "visible",
+                  },
+                })
+              }
+
+              // Use the bounding box from the API response to set the map view
+              if (newDataset.bounding_box) {
+                const { minx, miny, maxx, maxy } = newDataset.bounding_box
+                const bounds = new mapboxgl.LngLatBounds(
+                  [Number.parseFloat(minx), Number.parseFloat(miny)],
+                  [Number.parseFloat(maxx), Number.parseFloat(maxy)],
+                )
+                if (!bounds.isEmpty()) {
+                  currentMap.fitBounds(bounds, {
+                    padding: 50,
+                    duration: 1000,
+                    maxZoom: 15,
+                  })
+                }
+              }
+
+              console.log(`Added vector tile layer from GeoServer: ${newDataset.name} with ID: ${layerId}`)
+            }
+
+            if (currentMap.isStyleLoaded()) {
+              addVectorTileLayerToMap()
+            } else {
+              currentMap.once("style.load", addVectorTileLayerToMap)
+            }
+          } catch (error) {
+            console.error("Error adding vector tile layer to map:", error)
+          }
+        } else if (newDataset.type === "vector" && newDataset.geometry_data) {
+          // Fallback: Handle vector data as GeoJSON (when GeoServer is unavailable)
           try {
             // Create a unique source ID for this dataset
             const sourceId = `source-${newDataset.id || Date.now()}`
@@ -595,7 +654,7 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
               }
 
               console.log(
-                `Added ${newDataset.features_count || newDataset.geometry_data.features.length} vector features to the map`,
+                `Added ${newDataset.features_count || newDataset.geometry_data.features.length} vector features to the map (GeoJSON fallback)`,
               )
             }
 

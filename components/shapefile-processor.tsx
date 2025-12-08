@@ -13,7 +13,7 @@ export class ShapefileProcessor {
   private map: mapboxgl.Map | null
   private onProcessComplete?: (result: any) => void
   private onProcessError?: (error: Error) => void
-  private backendUrl = `${process.env.NEXT_PUBLIC_API_URL}/voronoi` // Updated endpoint URL
+  private backendUrl = `http://localhost:5000/voronoi` // Updated endpoint URL
   private projectId: string
   private onAddDataset?: (dataset: any) => void
 
@@ -55,6 +55,17 @@ export class ShapefileProcessor {
         features: [],
       }
       dataset.features_count = responseData.features_count || 0
+      // Also include GeoServer URLs if available (vector tiles)
+      if (responseData.mapbox_url) {
+        dataset.mapbox_url = responseData.mapbox_url
+        dataset.bounding_box = responseData.bounding_box || null
+        dataset.layer_name = responseData.layer_name || ""
+        console.log("Processing vector dataset with GeoServer tiles:", {
+          id: dataset.id,
+          name: dataset.name,
+          mapbox_url: dataset.mapbox_url,
+        })
+      }
     } else if (dataset.type === "raster") {
       dataset.mapbox_url = responseData.mapbox_url || ""
       dataset.bounding_box = responseData.bounding_box || null
