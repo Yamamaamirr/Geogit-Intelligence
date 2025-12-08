@@ -74,7 +74,7 @@ export function CreateProjectDialog() {
       }, 100)
 
       // Make the API request directly to your endpoint
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects`, {
+      const response = await fetch(`http://localhost:5000/api/projects`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

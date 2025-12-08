@@ -3,15 +3,18 @@ import Loading from "@/app/loading"
 import { MapWorkspace } from "@/components/map-workspace"
 
 interface ProjectPageProps {
-  params: { id: string }
-  searchParams: { name?: string; description?: string }
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ name?: string; description?: string }>
 }
 
-export default function ProjectPage({ params, searchParams }: ProjectPageProps) {
-  // Extract values directly and pass them as props instead of passing the objects
-  const projectId = params.id
-  const projectName = typeof searchParams.name === "string" ? searchParams.name : ""
-  const projectDescription = typeof searchParams.description === "string" ? searchParams.description : ""
+export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
+  // Await the params and searchParams (required in Next.js 15)
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
+  
+  const projectId = resolvedParams.id
+  const projectName = typeof resolvedSearchParams.name === "string" ? resolvedSearchParams.name : ""
+  const projectDescription = typeof resolvedSearchParams.description === "string" ? resolvedSearchParams.description : ""
 
   return (
     <Suspense fallback={<Loading />}>

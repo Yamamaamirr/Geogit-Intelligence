@@ -176,7 +176,7 @@ export function AddDatasetDialog({ open, onOpenChange, onAddDataset, projectId }
 
     try {
         // Send to the appropriate endpoint based on type
-      const endpoint = `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/upload/${datasetForm.type.toLowerCase()}`
+      const endpoint = `http://localhost:5000/api/projects/${projectId}/upload/${datasetForm.type.toLowerCase()}`
 
       console.log("Sending request to:", endpoint)
 
@@ -227,6 +227,12 @@ export function AddDatasetDialog({ open, onOpenChange, onAddDataset, projectId }
             features: [] 
           }
           dataset.features_count = responseData.features_count || 0
+          // Also include GeoServer URLs if available (vector tiles)
+          if (responseData.mapbox_url) {
+            dataset.mapbox_url = responseData.mapbox_url
+            dataset.bounding_box = responseData.bounding_box
+            dataset.layer_name = responseData.layer_name
+          }
         } else if (datasetForm.type === "raster") {
           dataset.mapbox_url = responseData.mapbox_url
           dataset.bounding_box = responseData.bounding_box
