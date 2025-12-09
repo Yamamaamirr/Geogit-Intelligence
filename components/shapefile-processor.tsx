@@ -1,28 +1,87 @@
 "use client"
+// @ts-ignore - mapbox-gl types
 import type mapboxgl from "mapbox-gl"
 
-interface ShapefileProcessorProps {
-  map: mapboxgl.Map | null
-  onProcessComplete?: (result: any) => void
-  onProcessError?: (error: Error) => void
-  projectId?: string
-  onAddDataset?: (dataset: any) => void
+interface LulcLegendItem {
+  class: string
+  color: string
+}
+
+interface UhiLegendItem {
+  label: string
+  color: string
+  range: string
+}
+
+interface UhiStats {
+  Year: number
+  Mean: number
+  Median: number
+  Min: number
+  Max: number
+  Q1: number
+  Q3: number
+  SUHII: number
+}
+
+interface ApiResponseData {
+  id?: string
+  name?: string
+  type?: string
+  format?: string
+  crs?: string
+  version_number?: string
+  features_count?: number
+  mapbox_url?: string
+  bounding_box?: { minx: string; miny: string; maxx: string; maxy: string } | null
+  layer_name?: string
+  file_path?: string
+  // Analysis metadata
+  analysis_type?: "lulc" | "uhi"
+  label_percentages?: Record<string, number>
+  legend?: LulcLegendItem[] | UhiLegendItem[]
+  stats?: UhiStats[]
+  date_range?: string
+  year_range?: string
+}
+
+interface Dataset {
+  id: string
+  name: string
+  type: string
+  format: string
+  crs: string
+  status: string
+  visible: boolean
+  version_number: string
+  features_count?: number
+  mapbox_url?: string
+  bounding_box?: { minx: string; miny: string; maxx: string; maxy: string } | null
+  layer_name?: string
+  file_path?: string
+  // Analysis metadata
+  analysis_type?: "lulc" | "uhi"
+  label_percentages?: Record<string, number>
+  legend?: LulcLegendItem[] | UhiLegendItem[]
+  stats?: UhiStats[]
+  date_range?: string
+  year_range?: string
 }
 
 export class ShapefileProcessor {
   private map: mapboxgl.Map | null
-  private onProcessComplete?: (result: any) => void
+  private onProcessComplete?: (result: unknown) => void
   private onProcessError?: (error: Error) => void
   private backendUrl = `http://localhost:5000/voronoi` // Updated endpoint URL
   private projectId: string
-  private onAddDataset?: (dataset: any) => void
+  private onAddDataset?: (dataset: Dataset) => void
 
   constructor(
     map: mapboxgl.Map | null,
-    onProcessComplete?: (result: any) => void,
+    onProcessComplete?: (result: unknown) => void,
     onProcessError?: (error: Error) => void,
     projectId = "default",
-    onAddDataset?: (dataset: any) => void,
+    onAddDataset?: (dataset: Dataset) => void,
   ) {
     this.map = map
     this.onProcessComplete = onProcessComplete
@@ -31,41 +90,32 @@ export class ShapefileProcessor {
     this.onAddDataset = onAddDataset
   }
 
-  async processShapefileResponse(responseData: ArrayBuffer) {
-    const dataset = {
+  async processShapefileResponse(responseData: ApiResponseData): Promise<Dataset> {
+    const dataset: Dataset = {
       id: responseData.id || `d${Date.now()}`,
       name: responseData.name || "untitled",
       type: responseData.type || "vector",
       format: (responseData.format || "geojson").toLowerCase(),
       crs: responseData.crs || "EPSG:4326",
       status: "new",
-      visible: true, // Explicitly set visibility to true for new datasets
+      visible: true,
       version_number: responseData.version_number || "1",
-      geometry_data: responseData.geometry_data || {
-        type: "FeatureCollection",
-        features: [],
-      },
       features_count: responseData.features_count || 0,
     }
 
     // Add type-specific properties
     if (dataset.type === "vector") {
-      dataset.geometry_data = responseData.geometry_data || {
-        type: "FeatureCollection",
-        features: [],
-      }
+      // Vector data is always served as GeoServer tiles
       dataset.features_count = responseData.features_count || 0
-      // Also include GeoServer URLs if available (vector tiles)
-      if (responseData.mapbox_url) {
-        dataset.mapbox_url = responseData.mapbox_url
-        dataset.bounding_box = responseData.bounding_box || null
-        dataset.layer_name = responseData.layer_name || ""
-        console.log("Processing vector dataset with GeoServer tiles:", {
-          id: dataset.id,
-          name: dataset.name,
-          mapbox_url: dataset.mapbox_url,
-        })
-      }
+      dataset.mapbox_url = responseData.mapbox_url
+      dataset.bounding_box = responseData.bounding_box || null
+      dataset.layer_name = responseData.layer_name || ""
+      console.log("✅ Vector dataset with GeoServer tiles:", {
+        id: dataset.id,
+        name: dataset.name,
+        mapbox_url: dataset.mapbox_url,
+        features_count: dataset.features_count,
+      })
     } else if (dataset.type === "raster") {
       dataset.mapbox_url = responseData.mapbox_url || ""
       dataset.bounding_box = responseData.bounding_box || null
@@ -77,6 +127,28 @@ export class ShapefileProcessor {
         name: dataset.name,
         mapbox_url: dataset.mapbox_url,
       })
+    }
+
+    // Add analysis metadata if present (LULC/UHI)
+    if (responseData.analysis_type) {
+      dataset.analysis_type = responseData.analysis_type
+      dataset.legend = responseData.legend
+      
+      if (responseData.analysis_type === "lulc") {
+        dataset.label_percentages = responseData.label_percentages
+        dataset.date_range = responseData.date_range
+        console.log("📊 LULC analysis metadata:", {
+          label_percentages: dataset.label_percentages,
+          date_range: dataset.date_range,
+        })
+      } else if (responseData.analysis_type === "uhi") {
+        dataset.stats = responseData.stats
+        dataset.year_range = responseData.year_range
+        console.log("🌡️ UHI analysis metadata:", {
+          stats: dataset.stats,
+          year_range: dataset.year_range,
+        })
+      }
     }
 
     // Call through the class instance
@@ -142,18 +214,33 @@ export class ShapefileProcessor {
     }
   }
 
-  async processLayers(layers: Array<{ id: string; name: string; type: string; format?: string }>, prompt: string) {
+  async processLayers(
+    layers: Array<{ id: string; name: string; type: string; format?: string }>, 
+    prompt: string,
+    drawnGeometry?: GeoJSON.Feature | null
+  ) {
     try {
       const file_inputs = layers.map((layer) => ({
         id: layer.id,
         type: layer.type, // "vector" or "raster"
       }))
 
-      // Construct the JSON payload
-      const payload = {
+      // Construct the JSON payload with optional AOI (Area of Interest)
+      const payload: {
+        project_id: string
+        file_inputs: Array<{ id: string; type: string }>
+        prompt: string
+        aoi_geometry?: GeoJSON.Feature
+      } = {
         project_id: this.projectId,
         file_inputs,
         prompt,
+      }
+
+      // Include drawn geometry as AOI if available
+      if (drawnGeometry) {
+        payload.aoi_geometry = drawnGeometry
+        console.log("📍 Including AOI geometry in request:", drawnGeometry)
       }
 
       console.log("📤 Payload to send:", payload)

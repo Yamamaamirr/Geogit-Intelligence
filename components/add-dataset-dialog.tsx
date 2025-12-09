@@ -222,17 +222,12 @@ export function AddDatasetDialog({ open, onOpenChange, onAddDataset, projectId }
 
         // Add type-specific properties
         if (datasetForm.type === "vector") {
-          dataset.geometry_data = responseData.geometry_data || { 
-            type: "FeatureCollection", 
-            features: [] 
-          }
+          // Vector data is always served as GeoServer tiles
           dataset.features_count = responseData.features_count || 0
-          // Also include GeoServer URLs if available (vector tiles)
-          if (responseData.mapbox_url) {
-            dataset.mapbox_url = responseData.mapbox_url
-            dataset.bounding_box = responseData.bounding_box
-            dataset.layer_name = responseData.layer_name
-          }
+          dataset.mapbox_url = responseData.mapbox_url
+          dataset.bounding_box = responseData.bounding_box
+          dataset.layer_name = responseData.layer_name
+          console.log("✅ Vector uploaded with GeoServer tiles:", dataset.mapbox_url)
         } else if (datasetForm.type === "raster") {
           dataset.mapbox_url = responseData.mapbox_url
           dataset.bounding_box = responseData.bounding_box

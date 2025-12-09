@@ -12,6 +12,7 @@ import {
   Settings,
   FileUp,
 } from "lucide-react"
+// @ts-ignore - mapbox-gl types
 import mapboxgl from "mapbox-gl"
 import "mapbox-gl/dist/mapbox-gl.css"
 import Link from "next/link"
@@ -25,6 +26,8 @@ import { MapToolbar } from "@/components/map-toolbar"
 import { ComparisonView } from "@/components/comparison-view"
 import { getProjectById } from "@/lib/project-data"
 import { AddDatasetDialog } from "@/components/add-dataset-dialog"
+import { DrawingTools } from "@/components/drawing-tools"
+import { RasterMetadataPanel } from "@/components/raster-metadata-panel"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Set Mapbox access token globally
@@ -51,9 +54,11 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today? Type @ to select layers for processing.`,
+      content: `Hello! I'm your GeoLLM assistant. How can I help with your ${projectName || "spatial data"} today? Type @ to select layers for processing. Draw on the map to define an Area of Interest (AOI).`,
     },
   ])
+  const [drawnGeometry, setDrawnGeometry] = useState<GeoJSON.Feature | null>(null)
+  const [activeAnalysisDataset, setActiveAnalysisDataset] = useState<any>(null)
   // Debug log to verify props are received correctly
   useEffect(() => {
     console.log("MapWorkspace received props:", { projectId, projectName, projectDescription })
@@ -208,7 +213,7 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
         })
 
         // Handle errors
-        newMapInstance.on("error", (e) => {
+        newMapInstance.on("error", (e: { error?: unknown }) => {
           console.error("Map error:", e.error || e)
         })
       } catch (error) {
@@ -466,6 +471,18 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
           status: "new",
           visible: true,
           versions: [newDataset.version_number || "v1.0"],
+          // Include additional fields for proper functionality
+          mapbox_url: newDataset.mapbox_url,
+          bounding_box: newDataset.bounding_box,
+          layer_name: newDataset.layer_name,
+          file_path: newDataset.file_path,
+          // Analysis metadata for LULC/UHI
+          analysis_type: newDataset.analysis_type,
+          label_percentages: newDataset.label_percentages,
+          legend: newDataset.legend,
+          stats: newDataset.stats,
+          date_range: newDataset.date_range,
+          year_range: newDataset.year_range,
         },
       ]
 
@@ -541,130 +558,6 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
             }
           } catch (error) {
             console.error("Error adding vector tile layer to map:", error)
-          }
-        } else if (newDataset.type === "vector" && newDataset.geometry_data) {
-          // Fallback: Handle vector data as GeoJSON (when GeoServer is unavailable)
-          try {
-            // Create a unique source ID for this dataset
-            const sourceId = `source-${newDataset.id || Date.now()}`
-            const layerId = newDataset.id || `layer-${Date.now()}`
-
-            // Make sure the map is fully loaded before adding layers
-            const addVectorLayerToMap = () => {
-              // Add the source if it doesn't exist
-              if (!currentMap.getSource(sourceId)) {
-                currentMap.addSource(sourceId, {
-                  type: "geojson",
-                  data: newDataset.geometry_data,
-                })
-              }
-
-              // Add a single layer that handles all geometry types
-              if (!currentMap.getLayer(layerId)) {
-                currentMap.addLayer({
-                  id: layerId,
-                  type: "fill",
-                  source: sourceId,
-                  paint: {
-                    "fill-color": "#3b82f6",
-                    "fill-opacity": 0.6,
-                    "fill-outline-color": "#2563eb",
-                  },
-                  layout: {
-                    visibility: "visible", // Explicitly set initial visibility
-                  },
-                  filter: ["==", "$type", "Polygon"],
-                })
-
-                // Add a line layer that will handle both LineString and Polygon outlines
-                currentMap.addLayer({
-                  id: `${layerId}-lines`,
-                  type: "line",
-                  source: sourceId,
-                  paint: {
-                    "line-color": "#3b82f6",
-                    "line-width": 2,
-                  },
-                  layout: {
-                    visibility: "visible", // Explicitly set initial visibility
-                  },
-                  filter: ["any", ["==", "$type", "LineString"], ["==", "$type", "Polygon"]],
-                })
-
-                // Add a point layer
-                currentMap.addLayer({
-                  id: `${layerId}-points`,
-                  type: "circle",
-                  source: sourceId,
-                  paint: {
-                    "circle-radius": 6,
-                    "circle-color": "#3b82f6",
-                    "circle-stroke-width": 1,
-                    "circle-stroke-color": "#2563eb",
-                  },
-                  layout: {
-                    visibility: "visible", // Explicitly set initial visibility
-                  },
-                  filter: ["==", "$type", "Point"],
-                })
-              }
-
-              // Calculate bounds of the geometry data (same as before)
-              if (newDataset.geometry_data.features.length > 0) {
-                const bounds = new mapboxgl.LngLatBounds()
-                let hasBounds = false
-
-                newDataset.geometry_data.features.forEach((feature: any) => {
-                  if (feature.geometry) {
-                    try {
-                      if (feature.geometry.type === "Point") {
-                        bounds.extend(feature.geometry.coordinates)
-                        hasBounds = true
-                      } else if (feature.geometry.type === "LineString") {
-                        feature.geometry.coordinates.forEach((coord: [number, number]) => {
-                          bounds.extend(coord)
-                          hasBounds = true
-                        })
-                      } else if (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon") {
-                        const processCoords = (coords: any[]) => {
-                          coords.forEach((coord: any) => {
-                            if (Array.isArray(coord[0])) {
-                              processCoords(coord)
-                            } else {
-                              bounds.extend(coord as [number, number])
-                              hasBounds = true
-                            }
-                          })
-                        }
-                        processCoords(feature.geometry.coordinates)
-                      }
-                    } catch (error) {
-                      console.warn(`Error processing feature geometry: ${error}`)
-                    }
-                  }
-                })
-
-                if (hasBounds && !bounds.isEmpty()) {
-                  currentMap.fitBounds(bounds, {
-                    padding: 50,
-                    duration: 1000,
-                    maxZoom: 15,
-                  })
-                }
-              }
-
-              console.log(
-                `Added ${newDataset.features_count || newDataset.geometry_data.features.length} vector features to the map (GeoJSON fallback)`,
-              )
-            }
-
-            if (currentMap.isStyleLoaded()) {
-              addVectorLayerToMap()
-            } else {
-              currentMap.once("style.load", addVectorLayerToMap)
-            }
-          } catch (error) {
-            console.error("Error adding vector data to map:", error)
           }
         } else if (newDataset.type === "raster" && newDataset.mapbox_url) {
           // Handle raster data with mapbox_url
@@ -748,19 +641,27 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
 
     setShowAddDatasetDialog(false)
     updateCommits(projectId)
+    
+    // Show analysis metadata panel for LULC/UHI results
+    if (newDataset.analysis_type && (newDataset.label_percentages || newDataset.stats)) {
+      setActiveAnalysisDataset(newDataset)
+    }
   }
 
 
   async function updateCommits(projectId: string) {
   const newCommits = await fetchCommits(projectId);
 
-  setProjectData(prev => ({
-    ...prev,
-    mapData: {
-      ...prev.mapData,
-      commits: newCommits,
-    },
-  }));
+  setProjectData((prev: typeof projectData) => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      mapData: {
+        ...prev.mapData,
+        commits: newCommits,
+      },
+    };
+  });
 }
 
   async function fetchCommits(projectId: string) {
@@ -930,10 +831,29 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
                     onAddDataset={handleAddDataset}
                     messages={messages}
                     setMessages={setMessages}
+                    drawnGeometry={drawnGeometry}
                   />
                 </TabsContent>
                 <TabsContent value="datasets" className="h-[calc(100%-41px)] p-0">
-                  <DatasetInspector datasets={projectData.mapData.datasets || []} map={mapInstanceRef.current} />
+                  <DatasetInspector 
+                    datasets={projectData.mapData.datasets || []} 
+                    map={mapInstanceRef.current}
+                    onUpdateDataset={(id: string, updates: Record<string, unknown>) => {
+                      setProjectData((prev: typeof projectData) => {
+                        if (!prev) return prev
+                        return {
+                          ...prev,
+                          mapData: {
+                            ...prev.mapData,
+                            datasets: prev.mapData.datasets.map((d: { id: string }) =>
+                              d.id === id ? { ...d, ...updates } : d
+                            ),
+                          },
+                        }
+                      })
+                    }}
+                    onShowAnalysisMetadata={(dataset: any) => setActiveAnalysisDataset(dataset)}
+                  />
                 </TabsContent>
               </Tabs>
             )}
@@ -950,6 +870,27 @@ export function MapWorkspace({ projectId, isNewProject = false, projectName, pro
         <div className="pointer-events-auto">
           {mapInstanceRef.current && <MapToolbar map={mapInstanceRef.current} onCompareClick={toggleComparisonView} />}
         </div>
+
+        {/* Drawing tools - positioned to the right of left sidebar */}
+        <div className="pointer-events-auto">
+          {mapInstanceRef.current && (
+            <DrawingTools
+              map={mapInstanceRef.current}
+              onGeometryDrawn={setDrawnGeometry}
+              drawnGeometry={drawnGeometry}
+              leftOffset={leftPanelCollapsed ? 12 : 292}
+            />
+          )}
+        </div>
+
+        {/* Raster Analysis Metadata Panel */}
+        {activeAnalysisDataset && (
+          <RasterMetadataPanel
+            dataset={activeAnalysisDataset}
+            onClose={() => setActiveAnalysisDataset(null)}
+            leftOffset={leftPanelCollapsed ? 12 : 292}
+          />
+        )}
 
         {/* Comparison view */}
         {showComparison && (

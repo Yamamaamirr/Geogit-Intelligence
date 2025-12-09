@@ -28,10 +28,11 @@ interface LlmAssistantProps {
   projectId: string
   messages: Array<{ role: string; content: string }>
   setMessages: React.Dispatch<React.SetStateAction<Array<{ role: string; content: string }>>>
- onAddDataset: (dataset: any) => void
+  onAddDataset: (dataset: any) => void
+  drawnGeometry?: GeoJSON.Feature | null
 }
 
-export function LlmAssistant({ projectName = "", datasets = [], map = null,projectId,onAddDataset, messages,setMessages }: LlmAssistantProps) {
+export function LlmAssistant({ projectName = "", datasets = [], map = null, projectId, onAddDataset, messages, setMessages, drawnGeometry }: LlmAssistantProps) {
 
   const [input, setInput] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
@@ -97,17 +98,48 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
   }
 
   const toggleLayerSelection = (layer: { id: string; name: string; type: string; format?: string }) => {
-    setSelectedLayers((prev) => {
-      const isSelected = prev.some((l) => l.id === layer.id)
-      if (isSelected) {
-        return prev.filter((l) => l.id !== layer.id)
-      } else {
-        return [...prev, layer]
-      }
-    })
+    const isAlreadySelected = selectedLayers.some((l) => l.id === layer.id)
+    
+    if (isAlreadySelected) {
+      // Remove layer from selection and from input text
+      const layerTag = `@${layer.name}`
+      setInput((currentInput) => currentInput.replace(layerTag, "").replace(/\s+/g, " ").trim())
+      setSelectedLayers((prev) => prev.filter((l) => l.id !== layer.id))
+    } else {
+      // Add layer to selection and insert into input text
+      setInput((currentInput) => {
+        // Check if this layer tag already exists in input
+        if (currentInput.includes(`@${layer.name}`)) {
+          return currentInput // Don't add duplicate
+        }
+        // Replace the standalone '@' with '@LayerName'
+        if (currentInput.endsWith("@")) {
+          return currentInput.slice(0, -1) + `@${layer.name} `
+        } else if (currentInput.includes("@ ")) {
+          return currentInput.replace("@ ", `@${layer.name} `)
+        }
+        return currentInput + `@${layer.name} `
+      })
+      setSelectedLayers((prev) => [...prev, layer])
+    }
+    
+    // Close the layer selector after selection
+    setShowLayerSelector(false)
+    
+    // Keep focus on input after selection
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 0)
   }
 
   const removeSelectedLayer = (layerId: string) => {
+    // Find the layer to get its name
+    const layerToRemove = selectedLayers.find((l) => l.id === layerId)
+    if (layerToRemove) {
+      // Remove the @LayerName tag from input
+      const layerTag = `@${layerToRemove.name}`
+      setInput((currentInput) => currentInput.replace(layerTag, "").replace(/\s+/g, " ").trim())
+    }
     setSelectedLayers((prev) => prev.filter((layer) => layer.id !== layerId))
   }
 
@@ -138,8 +170,8 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
         // Process the selected layers
         if (shapefileProcessorRef.current && map) {
           try {
-            // Send the data to the backend
-            const result = await shapefileProcessorRef.current.processLayers(selectedLayers, input.trim())
+            // Send the data to the backend with optional drawn geometry (AOI)
+            const result = await shapefileProcessorRef.current.processLayers(selectedLayers, input.trim(), drawnGeometry)
 
             clearInterval(progressInterval)
             setUploadProgress(100)
@@ -208,9 +240,17 @@ export function LlmAssistant({ projectName = "", datasets = [], map = null,proje
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-[#1A1A1E] to-[#1E1E26] relative">
       <div className="border-b border-border p-3">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="h-4 w-4 text-blue-400" />
-          <h3 className="text-xs font-medium">GeoLLM Assistant</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4 text-blue-400" />
+            <h3 className="text-xs font-medium">GeoLLM Assistant</h3>
+          </div>
+          {drawnGeometry && (
+            <Badge className="bg-blue-500/20 text-[9px] text-blue-400 px-1.5 h-5 flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+              AOI Active
+            </Badge>
+          )}
         </div>
       </div>
 
